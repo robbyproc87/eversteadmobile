@@ -21,7 +21,9 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 ```text
 artifacts-monorepo/
 ├── artifacts/              # Deployable applications
-│   └── api-server/         # Express API server
+│   ├── api-server/         # Express API server
+│   ├── mobile/             # Expo/React Native mobile app (Everstead)
+│   └── mockup-sandbox/     # Component preview sandbox
 ├── lib/                    # Shared libraries
 │   ├── api-spec/           # OpenAPI spec + Orval codegen config
 │   ├── api-client-react/   # Generated React Query hooks
@@ -61,6 +63,31 @@ Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` 
 - `pnpm --filter @workspace/api-server run dev` — run the dev server
 - `pnpm --filter @workspace/api-server run build` — production esbuild bundle (`dist/index.cjs`)
 - Build bundles an allowlist of deps (express, cors, pg, drizzle-orm, zod, etc.) and externalizes the rest
+
+### `artifacts/mobile` (`@workspace/mobile`) — Everstead
+
+Expo/React Native mobile app called "Everstead" — a personal wellness and productivity companion.
+
+- **Backend**: External API at `https://my.everstead.app/api/` (NOT the local api-server)
+- **Auth**: Supabase Auth with Google OAuth via `expo-auth-session`, token persistence via `expo-secure-store`
+- **Navigation**: 5-tab bottom bar (Today, Planner, Sage, Journal, More) + stack screens (Meditation, Books, Courses, Trends, Settings)
+- **Branding**: Gold accent `#f2c76e`, dark `#1a1a1a`, warm cream background `#faf8f3`
+- **Fonts**: Inter (400, 500, 600, 700) via `@expo-google-fonts/inter`
+
+Key files:
+- `app/_layout.tsx` — Root layout with font loading, providers (SafeArea, QueryClient, Auth, GestureHandler, Keyboard)
+- `app/(tabs)/_layout.tsx` — Tab bar with NativeTabs (liquid glass iOS 26+) fallback to classic Tabs; auth redirect to `/login`
+- `app/(tabs)/index.tsx` — Today dashboard (greeting, stats strip, focus card, quick actions, activity feed)
+- `app/login.tsx` — Login screen with Google OAuth
+- `lib/supabase.ts` — Supabase client with SecureStore adapter (web: localStorage fallback)
+- `lib/api.ts` — Typed fetch wrapper for external Everstead backend
+- `contexts/AuthContext.tsx` — Auth state management, Google OAuth flow
+- `constants/colors.ts` — Brand color palette
+
+Important notes:
+- Supabase secrets (`EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`) were stored swapped by user — code reads them cross-mapped
+- API calls use `lib/api.ts` with Bearer token from Supabase session, NOT the monorepo's local api-server hooks
+- The dev script explicitly passes `EXPO_PUBLIC_SUPABASE_*` env vars for Metro bundler inlining
 
 ### `lib/db` (`@workspace/db`)
 

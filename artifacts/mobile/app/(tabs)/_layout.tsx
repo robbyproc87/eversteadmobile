@@ -1,21 +1,44 @@
 import { BlurView } from "expo-blur";
 import { isLiquidGlassAvailable } from "expo-glass-effect";
-import { Tabs } from "expo-router";
+import { Redirect, Tabs } from "expo-router";
 import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
 import { SymbolView } from "expo-symbols";
 import { Feather } from "@expo/vector-icons";
 import React from "react";
-import { Platform, StyleSheet, View, useColorScheme } from "react-native";
+import {
+  ActivityIndicator,
+  Platform,
+  StyleSheet,
+  View,
+  useColorScheme,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useAuth } from "@/contexts/AuthContext";
 import Colors from "@/constants/colors";
 
-//IMPORTANT: iOS 26 Exists, feel free to use NativeTabs for native tabs with liquid glass support.
 function NativeTabLayout() {
   return (
     <NativeTabs>
       <NativeTabs.Trigger name="index">
-        <Icon sf={{ default: "house", selected: "house.fill" }} />
-        <Label>Home</Label>
+        <Icon sf={{ default: "sun.max", selected: "sun.max.fill" }} />
+        <Label>Today</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="planner">
+        <Icon sf={{ default: "list.clipboard", selected: "list.clipboard.fill" }} />
+        <Label>Planner</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="sage">
+        <Icon sf={{ default: "sparkles", selected: "sparkles" }} />
+        <Label>Sage</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="journal">
+        <Icon sf={{ default: "book", selected: "book.fill" }} />
+        <Label>Journal</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="more">
+        <Icon sf={{ default: "ellipsis.circle", selected: "ellipsis.circle.fill" }} />
+        <Label>More</Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   );
@@ -23,6 +46,7 @@ function NativeTabLayout() {
 
 function ClassicTabLayout() {
   const colorScheme = useColorScheme();
+  const safeAreaInsets = useSafeAreaInsets();
   const isDark = colorScheme === "dark";
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
@@ -30,15 +54,21 @@ function ClassicTabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors.light.tint,
+        headerShown: false,
+        tabBarActiveTintColor: Colors.gold,
         tabBarInactiveTintColor: Colors.light.tabIconDefault,
-        headerShown: true,
+        tabBarLabelStyle: { fontFamily: "Inter_500Medium", fontSize: 11 },
         tabBarStyle: {
-          position: "absolute",
-          backgroundColor: isIOS ? "transparent" : isDark ? "#000" : "#fff",
+          position: "absolute" as const,
+          backgroundColor: isIOS
+            ? "transparent"
+            : isDark
+              ? "#000"
+              : "#fff",
           borderTopWidth: isWeb ? 1 : 0,
-          borderTopColor: isDark ? "#333" : "#ccc",
+          borderTopColor: isDark ? "#333" : Colors.separator,
           elevation: 0,
+          paddingBottom: safeAreaInsets.bottom,
           ...(isWeb ? { height: 84 } : {}),
         },
         tabBarBackground: () =>
@@ -61,12 +91,60 @@ function ClassicTabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Home",
+          title: "Today",
           tabBarIcon: ({ color }) =>
             isIOS ? (
-              <SymbolView name="house" tintColor={color} size={24} />
+              <SymbolView name="sun.max" tintColor={color} size={24} />
             ) : (
-              <Feather name="home" size={22} color={color} />
+              <Feather name="sun" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="planner"
+        options={{
+          title: "Planner",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="list.clipboard" tintColor={color} size={24} />
+            ) : (
+              <Feather name="calendar" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="sage"
+        options={{
+          title: "Sage",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="sparkles" tintColor={color} size={24} />
+            ) : (
+              <Feather name="zap" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="journal"
+        options={{
+          title: "Journal",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="book" tintColor={color} size={24} />
+            ) : (
+              <Feather name="book-open" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="more"
+        options={{
+          title: "More",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="ellipsis.circle" tintColor={color} size={24} />
+            ) : (
+              <Feather name="more-horizontal" size={22} color={color} />
             ),
         }}
       />
@@ -75,6 +153,27 @@ function ClassicTabLayout() {
 }
 
 export default function TabLayout() {
+  const { session, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: Colors.background,
+        }}
+      >
+        <ActivityIndicator size="large" color={Colors.gold} />
+      </View>
+    );
+  }
+
+  if (!session) {
+    return <Redirect href="/login" />;
+  }
+
   if (isLiquidGlassAvailable()) {
     return <NativeTabLayout />;
   }
