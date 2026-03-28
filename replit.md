@@ -70,22 +70,29 @@ Expo/React Native mobile app called "Everstead" — a personal wellness and prod
 
 - **Backend**: External API at `https://my.everstead.app/api/` (NOT the local api-server)
 - **Auth**: Supabase Auth with Google OAuth via `expo-auth-session`, token persistence via `expo-secure-store`
-- **Navigation**: 5-tab bottom bar (Today, Planner, Sage, Journal, More) + stack screens (Meditation, Books, Courses, Trends, Settings)
+- **Navigation**: 4-tab bottom bar (Today, Planner, Journal, Meditate) + floating Sage orb (bottom-right, gold circle) opens AI coach modal + hamburger drawer (Growth Library, Trends, Settings, Sage link)
 - **Branding**: Gold accent `#f2c76e`, dark `#1a1a1a`, warm cream background `#faf8f3`
 - **Fonts**: Inter (400, 500, 600, 700) via `@expo-google-fonts/inter`
 
 Key files:
-- `app/_layout.tsx` — Root layout with font loading, providers (SafeArea, QueryClient, Auth, GestureHandler, Keyboard)
-- `app/(tabs)/_layout.tsx` — Tab bar with NativeTabs (liquid glass iOS 26+) fallback to classic Tabs; auth redirect to `/login`
-- `app/(tabs)/index.tsx` — Today dashboard (greeting, stats strip, focus card, quick actions, activity feed)
+- `app/_layout.tsx` — Root layout with font loading, providers (SafeArea, QueryClient, Auth, Drawer, GestureHandler, Keyboard), Sage orb overlay, drawer overlay
+- `app/(tabs)/_layout.tsx` — 4-tab bar with NativeTabs (liquid glass iOS 26+) fallback to classic Tabs; auth redirect to `/login`
+- `app/(tabs)/index.tsx` — Today dashboard (hamburger menu, greeting, stats strip, focus card, quick actions [Journal, Plan Today, Meditate], activity feed)
+- `app/(tabs)/planner.tsx`, `app/(tabs)/journal.tsx`, `app/(tabs)/meditation.tsx` — Tab screens with hamburger menu header
+- `app/sage.tsx` — Full-screen modal for Sage AI coach chat (opened via floating orb or drawer)
+- `app/growth-library.tsx` — Combined Books & Courses screen with tab switcher
 - `app/login.tsx` — Login screen with Google OAuth
-- `lib/supabase.ts` — Supabase client with SecureStore adapter (web: localStorage fallback)
-- `lib/api.ts` — Typed fetch wrapper for external Everstead backend
+- `components/SageOrb.tsx` — Floating gold orb with pulse animation, visible on all screens except Sage modal and login
+- `components/AppDrawer.tsx` — Slide-out drawer with logo, menu items, Sage link, and user profile
+- `components/AuthGuard.tsx` — Auth protection wrapper for screens
+- `contexts/DrawerContext.tsx` — Drawer open/close state management
 - `contexts/AuthContext.tsx` — Auth state management, Google OAuth flow
+- `lib/supabase.ts` — Supabase client with SecureStore adapter (web: localStorage fallback), auto-detects swapped env vars
+- `lib/api.ts` — Typed fetch wrapper for external Everstead backend
 - `constants/colors.ts` — Brand color palette
 
 Important notes:
-- Supabase secrets (`EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`) were stored swapped by user — code reads them cross-mapped
+- Supabase secrets (`EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`) were stored swapped by user — supabase.ts auto-detects which is URL vs key
 - API calls use `lib/api.ts` with Bearer token from Supabase session, NOT the monorepo's local api-server hooks
 - The dev script explicitly passes `EXPO_PUBLIC_SUPABASE_*` env vars for Metro bundler inlining
 

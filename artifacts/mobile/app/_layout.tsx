@@ -6,45 +6,69 @@ import {
   useFonts,
 } from "@expo-google-fonts/inter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
-import { AuthGuard } from "@/components/AuthGuard";
+import { AppDrawer } from "@/components/AppDrawer";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { SageOrb } from "@/components/SageOrb";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { DrawerProvider, useDrawer } from "@/contexts/DrawerContext";
 import Colors from "@/constants/colors";
 
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
-function ProtectedScreen({ children }: { children: React.ReactNode }) {
-  return <AuthGuard>{children}</AuthGuard>;
-}
+function RootLayoutContent() {
+  const router = useRouter();
+  const segments = useSegments();
+  const { session } = useAuth();
+  const { drawerOpen, closeDrawer } = useDrawer();
 
-function RootLayoutNav() {
+  const isSageOpen = segments.includes("sage" as never);
+  const isLoginScreen = segments.includes("login" as never);
+  const showOrb = session && !isSageOpen && !isLoginScreen;
+
   return (
-    <Stack
-      screenOptions={{
-        headerBackTitle: "Back",
-        headerStyle: { backgroundColor: Colors.background },
-        headerTintColor: Colors.dark,
-        contentStyle: { backgroundColor: Colors.background },
-        headerTitleStyle: { fontFamily: "Inter_600SemiBold" },
-      }}
-    >
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="login" options={{ headerShown: false }} />
-      <Stack.Screen name="meditation" options={{ title: "Meditation" }} />
-      <Stack.Screen name="books" options={{ title: "Books" }} />
-      <Stack.Screen name="courses" options={{ title: "Courses" }} />
-      <Stack.Screen name="trends" options={{ title: "Trends" }} />
-      <Stack.Screen name="settings" options={{ title: "Settings" }} />
-    </Stack>
+    <>
+      <Stack
+        screenOptions={{
+          headerBackTitle: "Back",
+          headerStyle: { backgroundColor: Colors.background },
+          headerTintColor: Colors.dark,
+          contentStyle: { backgroundColor: Colors.background },
+          headerTitleStyle: { fontFamily: "Inter_600SemiBold" },
+        }}
+      >
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="login" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="sage"
+          options={{
+            headerShown: false,
+            presentation: "modal",
+            animation: "slide_from_bottom",
+          }}
+        />
+        <Stack.Screen
+          name="growth-library"
+          options={{ title: "Growth Library" }}
+        />
+        <Stack.Screen name="trends" options={{ title: "Trends" }} />
+        <Stack.Screen name="settings" options={{ title: "Settings" }} />
+      </Stack>
+      {showOrb && <SageOrb />}
+      <AppDrawer
+        visible={drawerOpen}
+        onClose={closeDrawer}
+        onOpenSage={() => router.push("/sage")}
+      />
+    </>
   );
 }
 
@@ -69,11 +93,13 @@ export default function RootLayout() {
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
-            <GestureHandlerRootView style={{ flex: 1 }}>
-              <KeyboardProvider>
-                <RootLayoutNav />
-              </KeyboardProvider>
-            </GestureHandlerRootView>
+            <DrawerProvider>
+              <GestureHandlerRootView style={{ flex: 1 }}>
+                <KeyboardProvider>
+                  <RootLayoutContent />
+                </KeyboardProvider>
+              </GestureHandlerRootView>
+            </DrawerProvider>
           </AuthProvider>
         </QueryClientProvider>
       </ErrorBoundary>

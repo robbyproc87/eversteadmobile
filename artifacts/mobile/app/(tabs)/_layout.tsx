@@ -28,17 +28,13 @@ function NativeTabLayout() {
         <Icon sf={{ default: "list.clipboard", selected: "list.clipboard.fill" }} />
         <Label>Planner</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="sage">
-        <Icon sf={{ default: "sparkles", selected: "sparkles" }} />
-        <Label>Sage</Label>
-      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="journal">
         <Icon sf={{ default: "book", selected: "book.fill" }} />
         <Label>Journal</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="more">
-        <Icon sf={{ default: "ellipsis.circle", selected: "ellipsis.circle.fill" }} />
-        <Label>More</Label>
+      <NativeTabs.Trigger name="meditation">
+        <Icon sf={{ default: "brain.head.profile", selected: "brain.head.profile.fill" }} />
+        <Label>Meditate</Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   );
@@ -113,18 +109,6 @@ function ClassicTabLayout() {
         }}
       />
       <Tabs.Screen
-        name="sage"
-        options={{
-          title: "Sage",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="sparkles" tintColor={color} size={24} />
-            ) : (
-              <Feather name="zap" size={22} color={color} />
-            ),
-        }}
-      />
-      <Tabs.Screen
         name="journal"
         options={{
           title: "Journal",
@@ -137,14 +121,14 @@ function ClassicTabLayout() {
         }}
       />
       <Tabs.Screen
-        name="more"
+        name="meditation"
         options={{
-          title: "More",
+          title: "Meditate",
           tabBarIcon: ({ color }) =>
             isIOS ? (
-              <SymbolView name="ellipsis.circle" tintColor={color} size={24} />
+              <SymbolView name="brain.head.profile" tintColor={color} size={24} />
             ) : (
-              <Feather name="more-horizontal" size={22} color={color} />
+              <Feather name="headphones" size={22} color={color} />
             ),
         }}
       />

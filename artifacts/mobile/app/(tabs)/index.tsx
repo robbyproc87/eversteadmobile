@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 
 import { useAuth } from "@/contexts/AuthContext";
+import { useDrawer } from "@/contexts/DrawerContext";
 import Colors from "@/constants/colors";
 import { api } from "@/lib/api";
 import type { ActivityItem } from "@/lib/api";
@@ -119,6 +120,7 @@ function ActivityRow({ item }: { item: ActivityItem }) {
 
 export default function TodayScreen() {
   const { user } = useAuth();
+  const { openDrawer } = useDrawer();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const webTopInset = Platform.OS === "web" ? 67 : 0;
@@ -181,6 +183,19 @@ export default function TodayScreen() {
         }
       >
         <View style={styles.header}>
+          <Pressable
+            onPress={() => {
+              if (Platform.OS !== "web")
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              openDrawer();
+            }}
+            style={({ pressed }) => [
+              styles.headerButton,
+              pressed && { opacity: 0.6 },
+            ]}
+          >
+            <Feather name="menu" size={22} color={Colors.dark} />
+          </Pressable>
           <View style={styles.headerTextContainer}>
             <Text style={styles.greeting}>
               {getGreeting()}
@@ -191,11 +206,11 @@ export default function TodayScreen() {
           <Pressable
             onPress={() => router.push("/settings")}
             style={({ pressed }) => [
-              styles.settingsButton,
+              styles.headerButton,
               pressed && { opacity: 0.7 },
             ]}
           >
-            <Feather name="settings" size={22} color={Colors.textSecondary} />
+            <Feather name="settings" size={20} color={Colors.textSecondary} />
           </Pressable>
         </View>
 
@@ -268,26 +283,19 @@ export default function TodayScreen() {
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.quickActionsRow}>
             <QuickAction
-              icon="calendar"
-              label="Plan Day"
-              onPress={() => router.push("/(tabs)/planner")}
-            />
-            <QuickAction
               icon="edit-3"
               label="Journal"
               onPress={() => router.push("/(tabs)/journal")}
             />
-          </View>
-          <View style={[styles.quickActionsRow, { marginTop: 12 }]}>
+            <QuickAction
+              icon="calendar"
+              label="Plan Today"
+              onPress={() => router.push("/(tabs)/planner")}
+            />
             <QuickAction
               icon="headphones"
               label="Meditate"
-              onPress={() => router.push("/meditation")}
-            />
-            <QuickAction
-              icon="book"
-              label="Read"
-              onPress={() => router.push("/books")}
+              onPress={() => router.push("/(tabs)/meditation")}
             />
           </View>
         </View>
@@ -329,31 +337,19 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 100,
+    paddingBottom: 120,
   },
   header: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "flex-start",
-    paddingTop: 16,
+    paddingTop: 12,
     paddingBottom: 20,
+    gap: 12,
   },
   headerTextContainer: {
     flex: 1,
-    marginRight: 12,
   },
-  greeting: {
-    fontSize: 26,
-    fontFamily: "Inter_700Bold",
-    color: Colors.dark,
-    marginBottom: 4,
-  },
-  date: {
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
-    color: Colors.textSecondary,
-  },
-  settingsButton: {
+  headerButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -362,6 +358,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 1,
     borderColor: Colors.cardBorder,
+  },
+  greeting: {
+    fontSize: 24,
+    fontFamily: "Inter_700Bold",
+    color: Colors.dark,
+    marginBottom: 4,
+  },
+  date: {
+    fontSize: 14,
+    fontFamily: "Inter_400Regular",
+    color: Colors.textSecondary,
   },
   statsStrip: {
     paddingBottom: 4,

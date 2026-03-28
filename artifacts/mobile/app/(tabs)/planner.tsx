@@ -1,7 +1,9 @@
 import { Feather } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import React from "react";
 import {
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,15 +11,33 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useDrawer } from "@/contexts/DrawerContext";
 import Colors from "@/constants/colors";
 
 export default function PlannerScreen() {
   const insets = useSafeAreaInsets();
+  const { openDrawer } = useDrawer();
   const webTopInset = Platform.OS === "web" ? 67 : 0;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + webTopInset }]}>
-      <Text style={styles.title}>Planner</Text>
+      <View style={styles.headerRow}>
+        <Pressable
+          onPress={() => {
+            if (Platform.OS !== "web")
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            openDrawer();
+          }}
+          style={({ pressed }) => [
+            styles.menuButton,
+            pressed && { opacity: 0.6 },
+          ]}
+        >
+          <Feather name="menu" size={22} color={Colors.dark} />
+        </Pressable>
+        <Text style={styles.title}>Planner</Text>
+        <View style={styles.menuButton} />
+      </View>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -42,13 +62,27 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
+    gap: 8,
+  },
+  menuButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   title: {
-    fontSize: 28,
+    flex: 1,
+    fontSize: 22,
     fontFamily: "Inter_700Bold",
     color: Colors.dark,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 8,
+    textAlign: "center",
   },
   scrollView: {
     flex: 1,
