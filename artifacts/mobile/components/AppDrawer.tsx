@@ -38,12 +38,6 @@ const menuItems = [
     subtitle: "Your progress over time",
     route: "/trends",
   },
-  {
-    icon: "settings",
-    label: "Settings",
-    subtitle: "Account & preferences",
-    route: "/settings",
-  },
 ] as const;
 
 export function AppDrawer({ visible, onClose, onOpenSage }: AppDrawerProps) {
@@ -179,8 +173,6 @@ export function AppDrawer({ visible, onClose, onOpenSage }: AppDrawerProps) {
             </Pressable>
           ))}
 
-          <View style={styles.divider} />
-
           <Pressable
             style={({ pressed }) => [
               styles.menuItem,
@@ -194,6 +186,25 @@ export function AppDrawer({ visible, onClose, onOpenSage }: AppDrawerProps) {
             <View style={styles.menuItemContent}>
               <Text style={styles.menuItemLabel}>Sage</Text>
               <Text style={styles.menuItemSubtitle}>AI Coach</Text>
+            </View>
+            <Feather name="chevron-right" size={16} color={Colors.textTertiary} />
+          </Pressable>
+
+          <View style={styles.divider} />
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.menuItem,
+              pressed && { backgroundColor: Colors.background },
+            ]}
+            onPress={() => handleNavigate("/settings")}
+          >
+            <View style={styles.menuItemIcon}>
+              <Feather name="settings" size={18} color={Colors.gold} />
+            </View>
+            <View style={styles.menuItemContent}>
+              <Text style={styles.menuItemLabel}>Settings</Text>
+              <Text style={styles.menuItemSubtitle}>Account & preferences</Text>
             </View>
             <Feather name="chevron-right" size={16} color={Colors.textTertiary} />
           </Pressable>
