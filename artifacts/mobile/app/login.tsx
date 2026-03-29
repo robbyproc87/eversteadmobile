@@ -15,7 +15,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import Colors from "@/constants/colors";
 
 export default function LoginScreen() {
-  const { session, loading, signInWithGoogle } = useAuth();
+  const { session, loading, signInWithGoogle, devBypass } = useAuth();
   const insets = useSafeAreaInsets();
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -99,6 +99,16 @@ export default function LoginScreen() {
               </>
             )}
           </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.previewButton,
+              pressed && { opacity: 0.7 },
+            ]}
+            onPress={devBypass}
+          >
+            <Feather name="eye" size={16} color={Colors.textSecondary} />
+            <Text style={styles.previewButtonText}>Preview Mode</Text>
+          </Pressable>
         </View>
       </View>
     </View>
@@ -179,5 +189,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: "Inter_600SemiBold",
     color: Colors.white,
+  },
+  previewButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    gap: 8,
+  },
+  previewButtonText: {
+    fontSize: 14,
+    fontFamily: "Inter_400Regular",
+    color: Colors.textSecondary,
   },
 });

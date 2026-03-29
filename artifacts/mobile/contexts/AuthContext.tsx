@@ -12,6 +12,7 @@ interface AuthContextType {
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
+  devBypass: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -20,6 +21,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   signInWithGoogle: async () => {},
   signOut: async () => {},
+  devBypass: () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -104,6 +106,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSession(null);
   };
 
+  const devBypass = () => {
+    const fakeSession = {
+      access_token: "dev-bypass",
+      refresh_token: "dev-bypass",
+      expires_in: 999999,
+      token_type: "bearer",
+      user: {
+        id: "dev-user",
+        email: "preview@everstead.app",
+        user_metadata: { full_name: "Preview User", avatar_url: "" },
+        app_metadata: {},
+        aud: "authenticated",
+        created_at: new Date().toISOString(),
+      },
+    } as any;
+    setSession(fakeSession);
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -112,6 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loading,
         signInWithGoogle,
         signOut,
+        devBypass,
       }}
     >
       {children}
