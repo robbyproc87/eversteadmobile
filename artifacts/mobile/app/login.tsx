@@ -102,14 +102,15 @@ export default function LoginScreen() {
           <Pressable
             style={({ pressed }) => [
               styles.previewButton,
-              pressed && { opacity: 0.7 },
+              pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
             ]}
             onPress={devBypass}
           >
-            <Feather name="eye" size={16} color={Colors.textSecondary} />
+            <Feather name="eye" size={22} color={Colors.dark} />
             <Text style={styles.previewButtonText}>Preview Mode</Text>
           </Pressable>
         </View>
+        <Text style={styles.versionText}>v1.2 — Apr 12</Text>
       </View>
     </View>
   );
@@ -194,12 +195,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 12,
-    gap: 8,
+    backgroundColor: Colors.gold,
+    borderRadius: 14,
+    paddingVertical: 16,
+    gap: 10,
   },
   previewButtonText: {
-    fontSize: 14,
+    fontSize: 16,
+    fontFamily: "Inter_600SemiBold",
+    color: Colors.dark,
+  },
+  versionText: {
+    fontSize: 12,
     fontFamily: "Inter_400Regular",
-    color: Colors.textSecondary,
+    color: Colors.textTertiary,
+    textAlign: "center",
+    marginTop: 8,
   },
 });
