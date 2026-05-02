@@ -346,4 +346,79 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ currentWeekId, items }),
     }),
+
+  listJournalEntries: (q?: string) => {
+    const qp = q && q.trim().length > 0 ? `?q=${encodeURIComponent(q)}` : "";
+    return apiFetch<JournalEntry[]>(`/journal${qp}`);
+  },
+
+  getJournalEntry: (id: string) =>
+    apiFetch<JournalEntry>(`/journal/${encodeURIComponent(id)}`),
+
+  createJournalEntry: (input: JournalEntryInput) =>
+    apiFetch<JournalEntry>("/journal", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+
+  updateJournalEntry: (id: string, input: JournalEntryInput & { forceUnlock?: boolean }) =>
+    apiFetch<JournalEntry>(`/journal/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+
+  deleteJournalEntry: (id: string) =>
+    apiFetch<unknown>(`/journal/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
 };
+
+export interface JournalEntry {
+  id: string;
+  userId?: string;
+  title?: string | null;
+  content?: string | null;
+  contentRich?: Record<string, unknown> | null;
+  contentPlainText?: string | null;
+  mood?: string | null;
+  tags: string[];
+  isPrivate?: boolean;
+  templateId?: string | null;
+  pageCount?: number;
+  createdAt: string;
+  updatedAt: string;
+  hasMedia?: boolean;
+  mediaCount?: number;
+}
+
+export interface JournalEntryInput {
+  title?: string | null;
+  content?: string | null;
+  contentRich?: Record<string, unknown> | null;
+  contentPlainText?: string | null;
+  mood?: string | null;
+  tags?: string[];
+  isPrivate?: boolean;
+}
+
+export const MOOD_OPTIONS: Array<{
+  value: string;
+  label: string;
+  emoji: string;
+  color: string;
+}> = [
+  { value: "HAPPY", label: "Happy", emoji: "😊", color: "#4a9c6d" },
+  { value: "CALM", label: "Calm", emoji: "😌", color: "#5b8def" },
+  { value: "SAD", label: "Sad", emoji: "😢", color: "#6b7fc7" },
+  { value: "ANXIOUS", label: "Anxious", emoji: "😰", color: "#e6a23c" },
+  { value: "ENERGETIC", label: "Energetic", emoji: "⚡", color: "#f08c3a" },
+  { value: "TIRED", label: "Tired", emoji: "😴", color: "#8a8a8a" },
+  { value: "GRATEFUL", label: "Grateful", emoji: "🙏", color: "#d4a84a" },
+  { value: "FRUSTRATED", label: "Frustrated", emoji: "😤", color: "#d4534a" },
+  { value: "NEUTRAL", label: "Neutral", emoji: "😐", color: "#9ca3af" },
+];
+
+export function getMoodOption(value: string | null | undefined) {
+  if (!value) return null;
+  return MOOD_OPTIONS.find((m) => m.value === value) ?? null;
+}

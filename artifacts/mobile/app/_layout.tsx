@@ -62,6 +62,10 @@ function RootLayoutContent() {
         />
         <Stack.Screen name="trends" options={{ title: "Trends" }} />
         <Stack.Screen name="settings" options={{ title: "Settings" }} />
+        <Stack.Screen
+          name="journal-entry"
+          options={{ headerShown: false, animation: "slide_from_right" }}
+        />
       </Stack>
       {showOrb && <SageOrb />}
       <AppDrawer
