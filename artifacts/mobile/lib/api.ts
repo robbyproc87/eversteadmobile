@@ -371,7 +371,84 @@ export const api = {
     apiFetch<unknown>(`/journal/${encodeURIComponent(id)}`, {
       method: "DELETE",
     }),
+
+  listMeditationSessions: () =>
+    apiFetch<MeditationSession[]>("/meditation/sessions"),
+
+  createMeditationSession: (input: {
+    durationS: number;
+    rating?: number;
+    meditationType?: string;
+    generatedMeditationId?: string;
+    tensionBefore?: number;
+    stressBefore?: number;
+  }) =>
+    apiFetch<MeditationSession>("/meditation/sessions", {
+      method: "POST",
+      body: JSON.stringify({
+        startedAt: new Date(Date.now() - input.durationS * 1000).toISOString(),
+        endedAt: new Date().toISOString(),
+        rating: input.rating,
+        meditationType: input.meditationType,
+        generatedMeditationId: input.generatedMeditationId,
+        tensionBefore: input.tensionBefore,
+        stressBefore: input.stressBefore,
+      }),
+    }),
+
+  rateMeditationSession: (id: string, rating: number) =>
+    apiFetch<MeditationSession>("/meditation/sessions", {
+      method: "PATCH",
+      body: JSON.stringify({ id, rating }),
+    }),
+
+  listGeneratedMeditations: () =>
+    apiFetch<GeneratedMeditation[]>("/meditation/generated"),
+
+  getGeneratedMeditation: (id: string) =>
+    apiFetch<GeneratedMeditationDetail>(
+      `/meditation/generated/${encodeURIComponent(id)}`,
+    ),
+
+  deleteGeneratedMeditation: (id: string) =>
+    apiFetch<unknown>(`/meditation/generated/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+
+  listMeditationTracks: () =>
+    apiFetch<MeditationTrack[]>("/meditation/tracks"),
 };
+
+export interface MeditationSession {
+  id: string;
+  userId?: string;
+  trackId?: string | null;
+  generatedMeditationId?: string | null;
+  meditationType?: string | null;
+  startedAt: string;
+  endedAt?: string | null;
+  rating?: number | null;
+  notes?: string | null;
+}
+
+export interface GeneratedMeditation {
+  id: string;
+  meditationType: string;
+  durationS: number;
+  generatedAt: string;
+}
+
+export interface GeneratedMeditationDetail extends GeneratedMeditation {
+  scriptText: string;
+  audioUrl: string | null;
+}
+
+export interface MeditationTrack {
+  id: string;
+  title: string;
+  durationS: number;
+  category?: string | null;
+}
 
 export interface JournalEntry {
   id: string;
