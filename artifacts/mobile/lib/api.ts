@@ -672,6 +672,250 @@ export const lifeArchitectureApi = {
     }),
 };
 
+// ---------- Growth Library helpers ----------
+
+/**
+ * Force https:// on remote image URLs and reject anything else (data:, file:, etc).
+ * Returns undefined for unsafe/empty values so callers can fall back to a placeholder.
+ */
+export function normalizeImageUrl(
+  url: string | null | undefined,
+): string | undefined {
+  if (!url) return undefined;
+  const trimmed = url.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.startsWith("https://")) return trimmed;
+  if (trimmed.startsWith("http://")) return "https://" + trimmed.slice(7);
+  if (trimmed.startsWith("//")) return "https:" + trimmed;
+  return undefined;
+}
+
+// ---------- Growth Library: Books ----------
+
+export interface Book {
+  id: string;
+  title: string;
+  author?: string | null;
+  coverUrl?: string | null;
+  totalPages?: number | null;
+  pagesRead?: number | null;
+  googleBooksId?: string | null;
+  createdAt?: string;
+}
+
+export interface GoogleBookResult {
+  googleBooksId: string;
+  title: string;
+  author?: string;
+  coverUrl?: string;
+  totalPages?: number;
+}
+
+interface GoogleBooksApiResponse {
+  items?: Array<{
+    id: string;
+    volumeInfo?: {
+      title?: string;
+      authors?: string[];
+      pageCount?: number;
+      imageLinks?: {
+        thumbnail?: string;
+        smallThumbnail?: string;
+      };
+    };
+  }>;
+}
+
+export const booksApi = {
+  list: () => apiFetch<Book[]>("/books"),
+
+  add: (input: {
+    title: string;
+    author?: string;
+    coverUrl?: string;
+    totalPages?: number;
+    googleBooksId?: string;
+  }) =>
+    apiFetch<Book>("/books", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+
+  updateProgress: (id: string, pagesRead: number) =>
+    apiFetch<Book>(`/books/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ pagesRead }),
+    }),
+
+  remove: (id: string) =>
+    apiFetch<unknown>(`/books/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+
+  searchGoogle: async (query: string): Promise<GoogleBookResult[]> => {
+    const trimmed = query.trim();
+    if (!trimmed) return [];
+    const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(
+      trimmed,
+    )}&maxResults=12&printType=books`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new ApiError(
+        `Google Books search failed: ${res.status}`,
+        res.status,
+        res.statusText,
+      );
+    }
+    const data = (await res.json()) as GoogleBooksApiResponse;
+    return (data.items ?? [])
+      .map((item) => {
+        const v = item.volumeInfo ?? {};
+        return {
+          googleBooksId: item.id,
+          title: v.title ?? "Untitled",
+          author: v.authors?.join(", "),
+          coverUrl: normalizeImageUrl(
+            v.imageLinks?.thumbnail ?? v.imageLinks?.smallThumbnail,
+          ),
+          totalPages: v.pageCount,
+        } satisfies GoogleBookResult;
+      })
+      .filter((b) => b.title);
+  },
+};
+
+// ---------- Growth Library: Courses ----------
+
+export interface Course {
+  id: string;
+  title: string;
+  url?: string | null;
+  platform?: string | null;
+  thumbnailUrl?: string | null;
+  totalModules?: number | null;
+  completedModules?: number | null;
+  createdAt?: string;
+}
+
+export interface OgMetadata {
+  title?: string;
+  description?: string;
+  imageUrl?: string;
+  siteName?: string;
+}
+
+export const coursesApi = {
+  list: () => apiFetch<Course[]>("/courses"),
+
+  add: (input: {
+    title: string;
+    url?: string;
+    platform?: string;
+    thumbnailUrl?: string;
+    totalModules?: number;
+  }) =>
+    apiFetch<Course>("/courses", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+
+  updateProgress: (id: string, completedModules: number) =>
+    apiFetch<Course>(`/courses/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ completedModules }),
+    }),
+
+  remove: (id: string) =>
+    apiFetch<unknown>(`/courses/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+
+  /**
+   * Fetch OpenGraph metadata for a URL using the public microlink.io service.
+   * No API key required for low-volume usage.
+   */
+  scrapeOg: async (rawUrl: string): Promise<OgMetadata> => {
+    const trimmed = rawUrl.trim();
+    if (!trimmed) {
+      throw new ApiError("URL is required", 0, "Bad Request");
+    }
+    const normalized = /^https?:\/\//i.test(trimmed)
+      ? trimmed
+      : `https://${trimmed}`;
+    const res = await fetch(
+      `https://api.microlink.io/?url=${encodeURIComponent(normalized)}`,
+    );
+    if (!res.ok) {
+      throw new ApiError(
+        `Could not read that link (${res.status})`,
+        res.status,
+        res.statusText,
+      );
+    }
+    const json = (await res.json()) as {
+      status?: string;
+      data?: {
+        title?: string;
+        description?: string;
+        image?: { url?: string };
+        publisher?: string;
+      };
+    };
+    if (json.status !== "success" || !json.data) {
+      throw new ApiError(
+        "Could not read that link",
+        0,
+        "Scrape Error",
+      );
+    }
+    let host = "";
+    try {
+      host = new URL(normalized).hostname.replace(/^www\./, "");
+    } catch {
+      // ignore
+    }
+    return {
+      title: json.data.title,
+      description: json.data.description,
+      imageUrl: normalizeImageUrl(json.data.image?.url),
+      siteName: json.data.publisher || host,
+    };
+  },
+};
+
+// ---------- Calendar integration status ----------
+
+export const integrationsApi = {
+  /**
+   * Mobile is read-only for calendar — we infer connection status by attempting
+   * to read a small window. Auth (401/403) means signed out, not disconnected.
+   */
+  getCalendarStatus: async (): Promise<{
+    connected: boolean;
+    reason?: string;
+  }> => {
+    const now = new Date();
+    const start = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
+    const end = new Date(now.getTime() + 60 * 60 * 1000).toISOString();
+    try {
+      await apiFetch<unknown>(
+        `/calendar/events?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+      );
+      return { connected: true };
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.status === 401 || e.status === 403) {
+          return { connected: false, reason: "Sign in required" };
+        }
+        if (e.status === 404 || e.status === 412 || e.status === 428) {
+          return { connected: false, reason: "Not connected" };
+        }
+      }
+      return { connected: false, reason: "Not connected" };
+    }
+  },
+};
+
 // ---------- Coach (Sage + specialists) ----------
 
 export const coachApi = {
