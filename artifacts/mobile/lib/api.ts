@@ -1,3 +1,5 @@
+import { fetch as expoFetch } from "expo/fetch";
+
 import { supabase } from "./supabase";
 
 const API_BASE = "https://my.everstead.app/api";
@@ -499,3 +501,137 @@ export function getMoodOption(value: string | null | undefined) {
   if (!value) return null;
   return MOOD_OPTIONS.find((m) => m.value === value) ?? null;
 }
+
+// ---------- Coach (Sage + specialists) ----------
+
+export interface CoachConversationListItem {
+  id: string;
+  title: string | null;
+  coachType: string;
+  updatedAt: string;
+}
+
+export interface CoachActionInfo {
+  tool: string;
+  success: boolean;
+  message: string;
+  navigateTo?: string | null;
+}
+
+export interface CoachChatMessage {
+  id: string;
+  role: string;
+  content: string;
+  actions?: CoachActionInfo[] | null;
+  createdAt: string;
+}
+
+export interface CoachConversationDetail {
+  id: string;
+  title: string | null;
+  coachType: string;
+  messages: CoachChatMessage[];
+}
+
+export interface CoachStreamChunk {
+  conversationId?: string;
+  thinking?: boolean;
+  action?: CoachActionInfo;
+  text?: string;
+  done?: boolean;
+  error?: string;
+}
+
+export interface CoachChatRequest {
+  conversationId: string | null;
+  message: string;
+  coachType: string;
+  currentPage?: string;
+}
+
+export const coachApi = {
+  listConversations: () =>
+    apiFetch<CoachConversationListItem[]>("/coach/conversations"),
+
+  getConversation: (id: string) =>
+    apiFetch<CoachConversationDetail>(
+      `/coach/conversations/${encodeURIComponent(id)}`,
+    ),
+
+  async *streamChat(
+    body: CoachChatRequest,
+    signal?: AbortSignal,
+  ): AsyncGenerator<CoachStreamChunk> {
+    const headers = await getAuthHeaders();
+    let res: Response;
+    try {
+      res = (await expoFetch(`${API_BASE}/coach/chat`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        signal,
+      })) as unknown as Response;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Network request failed";
+      throw new ApiError(`Network error: ${msg}`, 0, "Network Error");
+    }
+
+    if (!res.ok) {
+      let text = "";
+      try {
+        text = await res.text();
+      } catch {
+        // ignore
+      }
+      let parsed: unknown = text;
+      if (text) {
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          // keep as text
+        }
+      }
+      throw new ApiError(
+        extractErrorMessage(parsed, `Coach chat error: ${res.status}`),
+        res.status,
+        res.statusText,
+        parsed,
+      );
+    }
+
+    const reader = (res.body as unknown as ReadableStream<Uint8Array> | null)?.getReader();
+    if (!reader) {
+      throw new ApiError("No response body for stream", 0, "Stream Error");
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() ?? "";
+        for (const evt of events) {
+          const trimmed = evt.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          const payload = trimmed.slice(5).trimStart();
+          if (!payload) continue;
+          try {
+            yield JSON.parse(payload) as CoachStreamChunk;
+          } catch {
+            // ignore parse errors for stray lines
+          }
+        }
+      }
+    } finally {
+      try {
+        await reader.cancel();
+      } catch {
+        // ignore
+      }
+    }
+  },
+};
