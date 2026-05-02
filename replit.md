@@ -82,6 +82,8 @@ Key files:
 - `app/sage.tsx` — Full-screen modal for Sage AI coach chat (opened via floating orb or drawer)
 - `app/growth-library.tsx` — Combined Books & Courses screen with tab switcher
 - `app/login.tsx` — Login screen with Google OAuth
+- `app/journal-entry.tsx` — Journal entry editor with Type/Write mode toggle (state preserved via mounted-but-hidden surfaces); Write mode renders InkPad and a tools/colors toolbar; on save, when canvas has strokes, posts rendered page PNGs to `/journal/transcribe`
+- `components/journal/InkPad.tsx` — Multi-page lined-paper canvas using `react-native-svg` + `perfect-freehand`; pen/pencil/highlighter/eraser tools, undo/redo, draggable template overlay, dot pen cursor, page navigation; PNG export via HTMLCanvas on web and `react-native-view-shot` (`captureRef`) on native
 - `components/SageOrb.tsx` — Floating gold orb with pulse animation, visible on all screens except Sage modal and login
 - `components/AppDrawer.tsx` — Slide-out drawer with logo, menu items, Sage link, and user profile
 - `components/AuthGuard.tsx` — Auth protection wrapper for screens

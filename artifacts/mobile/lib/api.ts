@@ -374,6 +374,12 @@ export const api = {
       method: "DELETE",
     }),
 
+  transcribeJournalEntry: (entryId: string, pages: string[]) =>
+    apiFetch<TranscribeResponse>("/journal/transcribe", {
+      method: "POST",
+      body: JSON.stringify({ entryId, pages }),
+    }),
+
   listMeditationSessions: () =>
     apiFetch<MeditationSession[]>("/meditation/sessions"),
 
@@ -452,6 +458,21 @@ export interface MeditationTrack {
   category?: string | null;
 }
 
+export interface InkPointData {
+  x: number;
+  y: number;
+  p?: number;
+  t?: number;
+}
+
+export interface InkStrokeData {
+  color: string;
+  size: number;
+  points: InkPointData[];
+  opacity?: number;
+  tool?: "pen" | "pencil" | "highlighter" | "eraser";
+}
+
 export interface JournalEntry {
   id: string;
   userId?: string;
@@ -464,6 +485,9 @@ export interface JournalEntry {
   isPrivate?: boolean;
   templateId?: string | null;
   pageCount?: number;
+  inkData?: InkStrokeData[] | null;
+  canvasData?: InkStrokeData[][] | null;
+  transcriptionStatus?: "pending" | "complete" | "failed" | null;
   createdAt: string;
   updatedAt: string;
   hasMedia?: boolean;
@@ -478,6 +502,16 @@ export interface JournalEntryInput {
   mood?: string | null;
   tags?: string[];
   isPrivate?: boolean;
+  canvasData?: InkStrokeData[][] | null;
+  inkData?: InkStrokeData[] | null;
+  templateId?: string | null;
+  pageCount?: number;
+  transcriptionStatus?: "pending" | "complete" | "failed" | null;
+}
+
+export interface TranscribeResponse {
+  text: string;
+  status: "complete" | "failed" | "pending";
 }
 
 export const MOOD_OPTIONS: Array<{

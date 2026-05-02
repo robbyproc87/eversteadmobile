@@ -30,9 +30,36 @@ import {
   ApiError,
   getMoodOption,
   MOOD_OPTIONS,
+  type InkStrokeData,
   type JournalEntry,
   type JournalEntryInput,
 } from "@/lib/api";
+import {
+  InkPad,
+  type InkPadHandles,
+  type InkStroke,
+  type ToolKind,
+} from "@/components/journal/InkPad";
+
+type EditorMode = "type" | "write";
+
+const PEN_COLORS: Array<{ hex: string; label: string }> = [
+  { hex: "#1a1a1a", label: "Black" },
+  { hex: "#4B5563", label: "Gray" },
+  { hex: "#1D4ED8", label: "Blue" },
+  { hex: "#DC2626", label: "Red" },
+  { hex: "#16A34A", label: "Green" },
+  { hex: "#9333EA", label: "Purple" },
+  { hex: "#F59E0B", label: "Amber" },
+  { hex: "#DB2777", label: "Pink" },
+];
+
+const TOOL_DEFAULT_SIZE: Record<ToolKind, number> = {
+  pen: 4,
+  pencil: 2,
+  highlighter: 6,
+  eraser: 22,
+};
 
 function haptic(style: Haptics.ImpactFeedbackStyle = Haptics.ImpactFeedbackStyle.Light) {
   if (Platform.OS !== "web") Haptics.impactAsync(style);
@@ -350,10 +377,22 @@ export default function JournalEntryScreen() {
   }, [entry?.createdAt]);
 
   const [mode, setMode] = useState<"view" | "edit">(isNew ? "edit" : "view");
+  const [editorMode, setEditorMode] = useState<EditorMode>("type");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [mood, setMood] = useState<string | null>(null);
   const [tags, setTags] = useState<string[]>([]);
+  const [canvasPages, setCanvasPages] = useState<InkStrokeData[][]>([]);
+  const [initialCanvas, setInitialCanvas] = useState<InkStroke[][] | undefined>(
+    undefined,
+  );
+  const [tool, setTool] = useState<ToolKind>("pen");
+  const [penColor, setPenColor] = useState<string>(PEN_COLORS[0].hex);
+  const [penSize, setPenSize] = useState<number>(TOOL_DEFAULT_SIZE.pen);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const inkPadRef = useRef<InkPadHandles>(null);
   const initializedRef = useRef(false);
 
   useEffect(() => {
@@ -370,7 +409,38 @@ export default function JournalEntryScreen() {
     setBody(entry.contentPlainText ?? entry.content ?? "");
     setMood(entry.mood ?? null);
     setTags(entry.tags ?? []);
+    const loaded =
+      entry.canvasData && Array.isArray(entry.canvasData)
+        ? (entry.canvasData as InkStroke[][])
+        : entry.inkData && Array.isArray(entry.inkData)
+          ? [entry.inkData as unknown as InkStroke[]]
+          : undefined;
+    if (loaded && loaded.length > 0) {
+      setInitialCanvas(loaded);
+      setCanvasPages(loaded as unknown as InkStrokeData[][]);
+    }
   }, [entry]);
+
+  const handleSelectTool = useCallback((next: ToolKind) => {
+    haptic();
+    setTool(next);
+    setPenSize(TOOL_DEFAULT_SIZE[next]);
+  }, []);
+
+  const handleSelectColor = useCallback((hex: string) => {
+    haptic();
+    setPenColor(hex);
+    if (tool === "eraser") setTool("pen");
+  }, [tool]);
+
+  const handleCanvasChange = useCallback((next: InkStroke[][]) => {
+    setCanvasPages(next as unknown as InkStrokeData[][]);
+  }, []);
+
+  const handleHistoryChange = useCallback((u: boolean, r: boolean) => {
+    setCanUndo(u);
+    setCanRedo(r);
+  }, []);
 
   useEffect(() => {
     if (entryQuery.error) {
@@ -382,10 +452,15 @@ export default function JournalEntryScreen() {
     }
   }, [entryQuery.error, showError]);
 
+  const hasCanvasContent = useMemo(
+    () => canvasPages.some((p) => p.length > 0),
+    [canvasPages],
+  );
+
   const buildPayload = useCallback((): JournalEntryInput => {
     const trimmedTitle = title.trim();
     const trimmedBody = body;
-    return {
+    const payload: JournalEntryInput = {
       title: trimmedTitle.length > 0 ? trimmedTitle : null,
       content: trimmedBody,
       contentPlainText: trimmedBody,
@@ -393,15 +468,50 @@ export default function JournalEntryScreen() {
       tags: tags,
       isPrivate: entry?.isPrivate ?? false,
     };
-  }, [title, body, mood, tags, entry?.isPrivate]);
+    if (hasCanvasContent) {
+      payload.canvasData = canvasPages;
+      payload.pageCount = canvasPages.length;
+      payload.transcriptionStatus = "pending";
+    } else if (initialCanvas) {
+      payload.canvasData = canvasPages;
+      payload.pageCount = canvasPages.length;
+    }
+    return payload;
+  }, [title, body, mood, tags, entry?.isPrivate, hasCanvasContent, canvasPages, initialCanvas]);
+
+  const runTranscription = useCallback(
+    async (entryId: string) => {
+      if (!hasCanvasContent) return;
+      try {
+        setIsTranscribing(true);
+        const pngs = (await inkPadRef.current?.exportPagesAsPng()) ?? [];
+        if (pngs.length === 0) return;
+        await api.transcribeJournalEntry(entryId, pngs);
+        queryClient.invalidateQueries({ queryKey: ["journal", "entry", entryId] });
+        queryClient.invalidateQueries({ queryKey: ["journal", "list"] });
+      } catch (err) {
+        const msg =
+          err instanceof ApiError
+            ? err.message
+            : "Couldn't transcribe handwriting.";
+        showError(msg);
+      } finally {
+        setIsTranscribing(false);
+      }
+    },
+    [hasCanvasContent, queryClient, showError],
+  );
 
   const createMutation = useMutation({
     mutationFn: (payload: JournalEntryInput) => api.createJournalEntry(payload),
-    onSuccess: (created) => {
+    onSuccess: async (created) => {
       queryClient.invalidateQueries({ queryKey: ["journal", "list"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard", "stats"] });
       showSuccess("Entry saved");
       haptic(Haptics.ImpactFeedbackStyle.Medium);
+      if (hasCanvasContent) {
+        await runTranscription(created.id);
+      }
       if (router.canGoBack()) {
         router.back();
       } else {
@@ -423,12 +533,15 @@ export default function JournalEntryScreen() {
       if (isLocked) body.forceUnlock = true;
       return api.updateJournalEntry(idParam, body);
     },
-    onSuccess: (updated) => {
+    onSuccess: async (updated) => {
       queryClient.setQueryData(["journal", "entry", idParam], updated);
       queryClient.invalidateQueries({ queryKey: ["journal", "list"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard", "stats"] });
       showSuccess("Entry saved");
       haptic(Haptics.ImpactFeedbackStyle.Medium);
+      if (hasCanvasContent) {
+        await runTranscription(updated.id);
+      }
       setMode("view");
     },
     onError: (err) => {
@@ -460,19 +573,34 @@ export default function JournalEntryScreen() {
     },
   });
 
-  const isSaving = createMutation.isPending || updateMutation.isPending;
+  const isSaving =
+    createMutation.isPending || updateMutation.isPending || isTranscribing;
 
   const handleSave = useCallback(() => {
     if (isSaving) return;
-    if (title.trim().length === 0 && body.trim().length === 0) {
-      showError("Add a title or some content before saving.");
+    if (
+      title.trim().length === 0 &&
+      body.trim().length === 0 &&
+      !hasCanvasContent
+    ) {
+      showError("Add a title, some content, or a sketch before saving.");
       return;
     }
     haptic();
     const payload = buildPayload();
     if (isNew) createMutation.mutate(payload);
     else updateMutation.mutate(payload);
-  }, [isSaving, title, body, isNew, buildPayload, createMutation, updateMutation, showError]);
+  }, [
+    isSaving,
+    title,
+    body,
+    hasCanvasContent,
+    isNew,
+    buildPayload,
+    createMutation,
+    updateMutation,
+    showError,
+  ]);
 
   const confirmUnlockAndEdit = useCallback(() => {
     const proceed = () => {
@@ -618,63 +746,274 @@ export default function JournalEntryScreen() {
             onDelete={confirmDelete}
           />
         ) : (
-          <ScrollView
-            style={styles.scroll}
-            contentContainerStyle={[
-              styles.scrollContent,
-              { paddingBottom: insets.bottom + 120 },
-            ]}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-          >
-            <TextInput
-              value={title}
-              onChangeText={setTitle}
-              placeholder="Entry title"
-              placeholderTextColor={Colors.textTertiary}
-              style={styles.titleInput}
-              maxLength={140}
-            />
-            <Text style={styles.editDate}>
-              {entry?.createdAt
-                ? formatLongDate(entry.createdAt)
-                : formatLongDate(new Date().toISOString())}
-            </Text>
-
-            <Text style={styles.sectionLabel}>How are you feeling?</Text>
-            <MoodPicker value={mood} onChange={setMood} />
-
-            <Text style={styles.sectionLabel}>Tags</Text>
-            <TagEditor tags={tags} onChange={setTags} />
-
-            <Text style={styles.sectionLabel}>Your thoughts</Text>
-            <TextInput
-              value={body}
-              onChangeText={setBody}
-              placeholder="Start writing your thoughts…"
-              placeholderTextColor={Colors.textTertiary}
-              style={styles.bodyInput}
-              multiline
-              textAlignVertical="top"
-              scrollEnabled={false}
-            />
-
-            {!isNew ? (
+          <View style={styles.editorStack}>
+            <View style={styles.modePillRow}>
               <Pressable
-                onPress={confirmDelete}
-                disabled={deleteMutation.isPending}
+                onPress={() => {
+                  haptic();
+                  setEditorMode("type");
+                }}
                 style={({ pressed }) => [
-                  styles.dangerBtn,
-                  { marginTop: 24 },
-                  deleteMutation.isPending && { opacity: 0.6 },
-                  pressed && !deleteMutation.isPending && { opacity: 0.85 },
+                  styles.modePill,
+                  editorMode === "type" && styles.modePillActive,
+                  pressed && { opacity: 0.85 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Type mode"
+              >
+                <Feather
+                  name="type"
+                  size={14}
+                  color={editorMode === "type" ? Colors.dark : Colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.modePillText,
+                    editorMode === "type" && styles.modePillTextActive,
+                  ]}
+                >
+                  Type
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  haptic();
+                  setEditorMode("write");
+                }}
+                style={({ pressed }) => [
+                  styles.modePill,
+                  editorMode === "write" && styles.modePillActive,
+                  pressed && { opacity: 0.85 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Write mode"
+              >
+                <Feather
+                  name="edit-3"
+                  size={14}
+                  color={editorMode === "write" ? Colors.dark : Colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.modePillText,
+                    editorMode === "write" && styles.modePillTextActive,
+                  ]}
+                >
+                  Write
+                </Text>
+              </Pressable>
+            </View>
+
+            <View
+              style={[
+                styles.editorSurface,
+                editorMode !== "type" && styles.editorSurfaceHidden,
+              ]}
+              pointerEvents={editorMode === "type" ? "auto" : "none"}
+            >
+              <ScrollView
+                style={styles.scroll}
+                contentContainerStyle={[
+                  styles.scrollContent,
+                  { paddingBottom: insets.bottom + 120 },
+                ]}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                <TextInput
+                  value={title}
+                  onChangeText={setTitle}
+                  placeholder="Entry title"
+                  placeholderTextColor={Colors.textTertiary}
+                  style={styles.titleInput}
+                  maxLength={140}
+                />
+                <Text style={styles.editDate}>
+                  {entry?.createdAt
+                    ? formatLongDate(entry.createdAt)
+                    : formatLongDate(new Date().toISOString())}
+                </Text>
+
+                <Text style={styles.sectionLabel}>How are you feeling?</Text>
+                <MoodPicker value={mood} onChange={setMood} />
+
+                <Text style={styles.sectionLabel}>Tags</Text>
+                <TagEditor tags={tags} onChange={setTags} />
+
+                <Text style={styles.sectionLabel}>Your thoughts</Text>
+                <TextInput
+                  value={body}
+                  onChangeText={setBody}
+                  placeholder="Start writing your thoughts…"
+                  placeholderTextColor={Colors.textTertiary}
+                  style={styles.bodyInput}
+                  multiline
+                  textAlignVertical="top"
+                  scrollEnabled={false}
+                />
+
+                {!isNew ? (
+                  <Pressable
+                    onPress={confirmDelete}
+                    disabled={deleteMutation.isPending}
+                    style={({ pressed }) => [
+                      styles.dangerBtn,
+                      { marginTop: 24 },
+                      deleteMutation.isPending && { opacity: 0.6 },
+                      pressed && !deleteMutation.isPending && { opacity: 0.85 },
+                    ]}
+                  >
+                    <Feather name="trash-2" size={16} color={Colors.error} />
+                    <Text style={styles.dangerBtnText}>Delete entry</Text>
+                  </Pressable>
+                ) : null}
+              </ScrollView>
+            </View>
+
+            <View
+              style={[
+                styles.editorSurface,
+                editorMode !== "write" && styles.editorSurfaceHidden,
+              ]}
+              pointerEvents={editorMode === "write" ? "auto" : "none"}
+            >
+              <ScrollView
+                style={styles.scroll}
+                contentContainerStyle={[
+                  styles.writeScrollContent,
+                  { paddingBottom: insets.bottom + 160 },
+                ]}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                <View style={{ paddingHorizontal: 16 }}>
+                  <TextInput
+                    value={title}
+                    onChangeText={setTitle}
+                    placeholder="Entry title"
+                    placeholderTextColor={Colors.textTertiary}
+                    style={styles.titleInput}
+                    maxLength={140}
+                  />
+                </View>
+                <View style={{ height: 12 }} />
+                <InkPad
+                  ref={inkPadRef}
+                  pages={initialCanvas as InkStroke[][] | undefined}
+                  tool={tool}
+                  color={penColor}
+                  size={penSize}
+                  onChange={handleCanvasChange}
+                  onHistoryChange={handleHistoryChange}
+                />
+              </ScrollView>
+
+              <View
+                style={[
+                  styles.writeToolbar,
+                  { paddingBottom: insets.bottom + 8 },
                 ]}
               >
-                <Feather name="trash-2" size={16} color={Colors.error} />
-                <Text style={styles.dangerBtnText}>Delete entry</Text>
-              </Pressable>
-            ) : null}
-          </ScrollView>
+                <View style={styles.toolRow}>
+                  {(["pen", "pencil", "highlighter", "eraser"] as ToolKind[]).map(
+                    (t) => (
+                      <Pressable
+                        key={t}
+                        onPress={() => handleSelectTool(t)}
+                        style={({ pressed }) => [
+                          styles.toolBtn,
+                          tool === t && styles.toolBtnActive,
+                          pressed && { opacity: 0.8 },
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${t} tool`}
+                      >
+                        <Feather
+                          name={
+                            t === "pen"
+                              ? "edit-2"
+                              : t === "pencil"
+                                ? "edit-3"
+                                : t === "highlighter"
+                                  ? "feather"
+                                  : "x-circle"
+                          }
+                          size={16}
+                          color={tool === t ? Colors.dark : Colors.textSecondary}
+                        />
+                      </Pressable>
+                    ),
+                  )}
+                  <View style={styles.toolDivider} />
+                  <Pressable
+                    onPress={() => {
+                      haptic();
+                      inkPadRef.current?.undo();
+                    }}
+                    disabled={!canUndo}
+                    style={({ pressed }) => [
+                      styles.toolBtn,
+                      !canUndo && { opacity: 0.35 },
+                      pressed && canUndo && { opacity: 0.7 },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Undo"
+                  >
+                    <Feather
+                      name="rotate-ccw"
+                      size={15}
+                      color={Colors.textSecondary}
+                    />
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      haptic();
+                      inkPadRef.current?.redo();
+                    }}
+                    disabled={!canRedo}
+                    style={({ pressed }) => [
+                      styles.toolBtn,
+                      !canRedo && { opacity: 0.35 },
+                      pressed && canRedo && { opacity: 0.7 },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Redo"
+                  >
+                    <Feather
+                      name="rotate-cw"
+                      size={15}
+                      color={Colors.textSecondary}
+                    />
+                  </Pressable>
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.colorRow}
+                >
+                  {PEN_COLORS.map((c) => {
+                    const selected = penColor === c.hex && tool !== "eraser";
+                    return (
+                      <Pressable
+                        key={c.hex}
+                        onPress={() => handleSelectColor(c.hex)}
+                        disabled={tool === "eraser"}
+                        style={({ pressed }) => [
+                          styles.colorSwatch,
+                          { backgroundColor: c.hex },
+                          selected && styles.colorSwatchSelected,
+                          tool === "eraser" && { opacity: 0.35 },
+                          pressed && tool !== "eraser" && { opacity: 0.85 },
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${c.label} ink`}
+                      />
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            </View>
+          </View>
         )}
       </KeyboardAvoidingView>
     </>
@@ -736,6 +1075,108 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 60,
+  },
+  editorStack: {
+    flex: 1,
+    position: "relative",
+  },
+  editorSurface: {
+    ...StyleSheet.absoluteFillObject,
+    top: 56,
+  },
+  editorSurfaceHidden: {
+    opacity: 0,
+  },
+  modePillRow: {
+    flexDirection: "row",
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 12,
+    alignItems: "center",
+    height: 56,
+  },
+  modePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    backgroundColor: Colors.card,
+  },
+  modePillActive: {
+    backgroundColor: Colors.goldLight,
+    borderColor: Colors.gold,
+  },
+  modePillText: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    color: Colors.textSecondary,
+  },
+  modePillTextActive: {
+    color: Colors.dark,
+  },
+  writeScrollContent: {
+    paddingTop: 8,
+  },
+  writeToolbar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingTop: 10,
+    paddingHorizontal: 12,
+    backgroundColor: Colors.card,
+    borderTopWidth: 1,
+    borderTopColor: Colors.cardBorder,
+    gap: 8,
+  },
+  toolRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  toolBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+  },
+  toolBtnActive: {
+    backgroundColor: Colors.goldLight,
+    borderColor: Colors.gold,
+  },
+  toolDivider: {
+    width: 1,
+    height: 22,
+    backgroundColor: Colors.cardBorder,
+    marginHorizontal: 4,
+  },
+  colorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 2,
+    paddingVertical: 4,
+  },
+  colorSwatch: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderColor: "rgba(0,0,0,0.15)",
+  },
+  colorSwatchSelected: {
+    borderColor: Colors.dark,
+    borderWidth: 2.5,
+    transform: [{ scale: 1.1 }],
   },
   titleInput: {
     fontSize: 24,

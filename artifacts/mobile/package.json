@@ -60,6 +60,8 @@
     "expo-auth-session": "^7.0.10",
     "expo-av": "^16.0.8",
     "expo-keep-awake": "^15.0.8",
-    "expo-secure-store": "^15.0.8"
+    "expo-secure-store": "^15.0.8",
+    "perfect-freehand": "^1.2.3",
+    "react-native-view-shot": "^5.0.0"
   }
 }
