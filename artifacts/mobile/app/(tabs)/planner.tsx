@@ -343,48 +343,101 @@ function GratitudesSection({ dailyPlanId, initial, onSaved }: GratitudesProps) {
   );
 }
 
+interface BlueprintPickItem {
+  id: string;
+  text: string;
+}
+
 interface TodoSectionProps {
   dailyPlanId?: string;
   initial: DailyPlanTodo[];
+  blueprintTodos: BlueprintPickItem[];
   onChange: () => void;
 }
 
-function TodoSection({ dailyPlanId, initial, onChange }: TodoSectionProps) {
+function TodoSection({ dailyPlanId, initial, blueprintTodos, onChange }: TodoSectionProps) {
   const { showError } = useToast();
   const [todos, setTodos] = useState<DailyPlanTodo[]>(initial);
   const [newText, setNewText] = useState("");
   const [adding, setAdding] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickedIds, setPickedIds] = useState<Set<string>>(new Set());
+  const inputRef = React.useRef<TextInput>(null);
 
   useEffect(() => {
     setTodos(initial);
   }, [initial]);
 
-  const handleAdd = async () => {
-    const text = newText.trim();
+  const hasBlueprintTodos = blueprintTodos.length > 0;
+
+  const addTodoWithSource = async (text: string, source: "manual" | "wds") => {
     if (!text || !dailyPlanId) return;
-    setAdding(true);
-    const tempId = `temp-${Date.now()}`;
+    const tempId = `temp-${Date.now()}-${Math.random()}`;
     const optimistic: DailyPlanTodo = {
       id: tempId,
       text,
       completed: false,
       ordinal: todos.length,
-      source: "manual",
+      source,
     };
     setTodos((prev) => [...prev, optimistic]);
-    setNewText("");
     haptic();
     try {
-      const created = await api.addTodo(dailyPlanId, text, "manual");
+      const created = await api.addTodo(dailyPlanId, text, source);
       setTodos((prev) => prev.map((t) => (t.id === tempId ? created : t)));
       onChange();
     } catch (e) {
       setTodos((prev) => prev.filter((t) => t.id !== tempId));
-      setNewText(text);
       showError(formatSaveError("to-do", e));
+      throw e;
+    }
+  };
+
+  const handleAdd = async () => {
+    const text = newText.trim();
+    if (!text || !dailyPlanId) return;
+    setAdding(true);
+    setNewText("");
+    try {
+      await addTodoWithSource(text, "manual");
+    } catch {
+      setNewText(text);
     } finally {
       setAdding(false);
     }
+  };
+
+  const handlePlusPress = () => {
+    if (hasBlueprintTodos) {
+      haptic();
+      setPickerOpen(true);
+    } else {
+      handleAdd();
+    }
+  };
+
+  const handlePickBlueprint = async (item: BlueprintPickItem) => {
+    if (pickedIds.has(item.id)) return;
+    if (todos.some((t) => t.text === item.text && t.source === "wds")) return;
+    setPickedIds((prev) => {
+      const next = new Set(prev);
+      next.add(item.id);
+      return next;
+    });
+    try {
+      await addTodoWithSource(item.text, "wds");
+    } catch {
+      setPickedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+    }
+  };
+
+  const handleTypeNew = () => {
+    setPickerOpen(false);
+    setTimeout(() => inputRef.current?.focus(), 100);
   };
 
   const toggle = async (todo: DailyPlanTodo) => {
@@ -465,6 +518,7 @@ function TodoSection({ dailyPlanId, initial, onChange }: TodoSectionProps) {
 
       <View style={styles.todoAddRow}>
         <TextInput
+          ref={inputRef}
           style={styles.todoInput}
           value={newText}
           placeholder="Add a to-do…"
@@ -475,13 +529,14 @@ function TodoSection({ dailyPlanId, initial, onChange }: TodoSectionProps) {
           editable={!!dailyPlanId && !adding}
         />
         <Pressable
-          onPress={handleAdd}
-          disabled={!newText.trim() || !dailyPlanId || adding}
+          onPress={handlePlusPress}
+          disabled={!dailyPlanId || adding || (!hasBlueprintTodos && !newText.trim())}
           style={({ pressed }) => [
             styles.addBtn,
-            (!newText.trim() || !dailyPlanId) && { opacity: 0.4 },
+            (!dailyPlanId || (!hasBlueprintTodos && !newText.trim())) && { opacity: 0.4 },
             pressed && { opacity: 0.8 },
           ]}
+          testID="todo-add-btn"
         >
           {adding ? (
             <ActivityIndicator size="small" color={Colors.white} />
@@ -490,6 +545,74 @@ function TodoSection({ dailyPlanId, initial, onChange }: TodoSectionProps) {
           )}
         </Pressable>
       </View>
+
+      <Modal
+        visible={pickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPickerOpen(false)}
+      >
+        <Pressable
+          style={styles.pickerBackdrop}
+          onPress={() => setPickerOpen(false)}
+        >
+          <Pressable style={styles.pickerSheet} onPress={(e) => e.stopPropagation()}>
+            <Pressable
+              onPress={handleTypeNew}
+              style={({ pressed }) => [
+                styles.pickerTypeNewBtn,
+                pressed && { opacity: 0.7 },
+              ]}
+              testID="btn-type-new-todo"
+            >
+              <Feather name="edit-2" size={14} color={Colors.dark} />
+              <Text style={styles.pickerTypeNewText}>Type new</Text>
+            </Pressable>
+            <View style={styles.pickerDivider} />
+            <Text style={styles.pickerHeading}>Pick from Blueprint</Text>
+            <ScrollView style={styles.pickerList} keyboardShouldPersistTaps="handled">
+              {blueprintTodos.map((item) => {
+                const alreadyAdded =
+                  pickedIds.has(item.id) ||
+                  todos.some((t) => t.text === item.text && t.source === "wds");
+                return (
+                  <Pressable
+                    key={item.id}
+                    onPress={() => handlePickBlueprint(item)}
+                    disabled={alreadyAdded}
+                    style={({ pressed }) => [
+                      styles.pickerItem,
+                      alreadyAdded && { opacity: 0.5 },
+                      pressed && !alreadyAdded && { backgroundColor: Colors.goldLight },
+                    ]}
+                    testID={`blueprint-pick-item-${item.id}`}
+                  >
+                    <View
+                      style={[
+                        styles.pickerCheck,
+                        alreadyAdded && styles.pickerCheckOn,
+                      ]}
+                    >
+                      {alreadyAdded ? (
+                        <Feather name="check" size={12} color={Colors.white} />
+                      ) : null}
+                    </View>
+                    <Text
+                      style={[
+                        styles.pickerItemText,
+                        alreadyAdded && styles.pickerItemTextDone,
+                      ]}
+                      numberOfLines={2}
+                    >
+                      {item.text}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -1136,6 +1259,23 @@ export default function PlannerScreen() {
     enabled: view === "day",
   });
 
+  const weekStartStr = formatDateParam(weekStart);
+
+  const blueprintQuery = useQuery({
+    queryKey: ["planner", "daily", weekStartStr, "blueprint-source"],
+    queryFn: () => api.getDailyPlan(weekStartStr),
+    retry: 1,
+    enabled: view === "day" && weekStartStr !== dateString,
+  });
+
+  const blueprintTodos = useMemo<BlueprintPickItem[]>(() => {
+    const data = blueprintQuery.data;
+    if (!data) return [];
+    return (data.todos || [])
+      .filter((t) => t.source === "wds" && !t.completed)
+      .map((t) => ({ id: t.id, text: t.text }));
+  }, [blueprintQuery.data]);
+
   const dayStart = useMemo(() => {
     const d = new Date(date);
     d.setHours(0, 0, 0, 0);
@@ -1429,6 +1569,7 @@ export default function PlannerScreen() {
             <TodoSection
               dailyPlanId={dailyPlan?.id}
               initial={todos}
+              blueprintTodos={blueprintTodos}
               onChange={invalidatePlan}
             />
           </>
@@ -1755,6 +1896,85 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.gold,
     justifyContent: "center",
     alignItems: "center",
+  },
+  pickerBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  pickerSheet: {
+    width: "100%",
+    maxWidth: 360,
+    maxHeight: "80%",
+    backgroundColor: Colors.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    padding: 12,
+  },
+  pickerTypeNewBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  pickerTypeNewText: {
+    fontSize: 14,
+    fontFamily: "Inter_500Medium",
+    color: Colors.dark,
+  },
+  pickerDivider: {
+    height: 1,
+    backgroundColor: Colors.separator,
+    marginVertical: 8,
+  },
+  pickerHeading: {
+    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
+    color: Colors.textSecondary,
+    letterSpacing: 0.4,
+    paddingHorizontal: 10,
+    paddingBottom: 6,
+    textTransform: "uppercase",
+  },
+  pickerList: {
+    maxHeight: 280,
+  },
+  pickerItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  pickerCheck: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: Colors.cardBorder,
+    backgroundColor: Colors.background,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  pickerCheckOn: {
+    backgroundColor: Colors.gold,
+    borderColor: Colors.gold,
+  },
+  pickerItemText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: "Inter_400Regular",
+    color: Colors.dark,
+  },
+  pickerItemTextDone: {
+    textDecorationLine: "line-through",
+    color: Colors.textSecondary,
   },
   allDayRow: {
     flexDirection: "row",
