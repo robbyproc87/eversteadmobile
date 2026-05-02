@@ -536,8 +536,6 @@ export function getMoodOption(value: string | null | undefined) {
   return MOOD_OPTIONS.find((m) => m.value === value) ?? null;
 }
 
-// ---------- Coach (Sage + specialists) ----------
-
 export interface CoachConversationListItem {
   id: string;
   title: string | null;
@@ -582,6 +580,99 @@ export interface CoachChatRequest {
   coachType: string;
   currentPage?: string;
 }
+
+// ---------- Life Architecture ----------
+
+export type LifeArchitectureCadence = "daily" | "weekly" | "monthly";
+
+export interface LAValue {
+  id: string;
+  text: string;
+}
+
+export interface LAPillar {
+  id: string;
+  name: string;
+  description?: string | null;
+}
+
+export interface LABlueprint {
+  id: string;
+  pillarId: string;
+  title: string;
+  targetDate?: string | null;
+  description?: string | null;
+}
+
+export interface LARitual {
+  id: string;
+  name: string;
+  cadence: LifeArchitectureCadence;
+  pillarIds: string[];
+}
+
+export interface LAGuardrail {
+  id: string;
+  rule: string;
+}
+
+export interface LifeArchitectureFoundation {
+  values: LAValue[];
+  nonNegotiables: string[];
+}
+
+export interface LifeArchitectureVision {
+  narrative: string;
+}
+
+export interface LifeArchitectureData {
+  foundation: LifeArchitectureFoundation;
+  pillars: LAPillar[];
+  blueprints: LABlueprint[];
+  rituals: LARitual[];
+  guardrails: LAGuardrail[];
+  vision: LifeArchitectureVision;
+}
+
+export interface LifeArchitectureSnapshotMeta {
+  id: string;
+  createdAt: string;
+  note?: string | null;
+}
+
+export interface LifeArchitectureSnapshot extends LifeArchitectureData {
+  id?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  versions?: LifeArchitectureSnapshotMeta[];
+}
+
+export const EMPTY_LIFE_ARCHITECTURE: LifeArchitectureData = {
+  foundation: { values: [], nonNegotiables: [] },
+  pillars: [],
+  blueprints: [],
+  rituals: [],
+  guardrails: [],
+  vision: { narrative: "" },
+};
+
+export const lifeArchitectureApi = {
+  get: () =>
+    apiFetch<LifeArchitectureSnapshot | null>("/life-architecture").catch(
+      (err) => {
+        if (err instanceof ApiError && err.status === 404) return null;
+        throw err;
+      },
+    ),
+
+  save: (data: LifeArchitectureData & { note?: string }) =>
+    apiFetch<LifeArchitectureSnapshot>("/life-architecture", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+};
+
+// ---------- Coach (Sage + specialists) ----------
 
 export const coachApi = {
   listConversations: () =>

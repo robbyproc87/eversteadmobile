@@ -61,6 +61,18 @@ function RootLayoutContent() {
           options={{ title: "Growth Library" }}
         />
         <Stack.Screen name="trends" options={{ title: "Trends" }} />
+        <Stack.Screen
+          name="life-architecture"
+          options={{ title: "Life Architecture" }}
+        />
+        <Stack.Screen
+          name="life-architecture-section"
+          options={{
+            headerShown: false,
+            presentation: "modal",
+            animation: "slide_from_bottom",
+          }}
+        />
         <Stack.Screen name="settings" options={{ title: "Settings" }} />
         <Stack.Screen
           name="journal-entry"

@@ -38,6 +38,12 @@ const menuItems = [
     subtitle: "Your progress over time",
     route: "/trends",
   },
+  {
+    icon: "layers",
+    label: "Life Architecture",
+    subtitle: "Your annual vision & plan",
+    route: "/life-architecture",
+  },
 ] as const;
 
 export function AppDrawer({ visible, onClose, onOpenSage }: AppDrawerProps) {
