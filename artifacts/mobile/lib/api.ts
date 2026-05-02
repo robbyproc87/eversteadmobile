@@ -132,20 +132,67 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
   };
 }
 
+export class ApiError extends Error {
+  status: number;
+  statusText: string;
+  body?: unknown;
+
+  constructor(message: string, status: number, statusText: string, body?: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.statusText = statusText;
+    this.body = body;
+  }
+}
+
+function extractErrorMessage(body: unknown, fallback: string): string {
+  if (body && typeof body === "object") {
+    const obj = body as Record<string, unknown>;
+    for (const key of ["message", "error", "detail"]) {
+      const val = obj[key];
+      if (typeof val === "string" && val.trim().length > 0) return val;
+    }
+  }
+  if (typeof body === "string" && body.trim().length > 0) return body;
+  return fallback;
+}
+
 export async function apiFetch<T>(
   path: string,
   options?: RequestInit,
 ): Promise<T> {
   const headers = await getAuthHeaders();
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: {
-      ...headers,
-      ...(options?.headers || {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: {
+        ...headers,
+        ...(options?.headers || {}),
+      },
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Network request failed";
+    throw new ApiError(`Network error: ${msg}`, 0, "Network Error");
+  }
+
   if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`);
+    const fallback = `API error: ${res.status} ${res.statusText}`;
+    let body: unknown;
+    try {
+      const text = await res.text();
+      if (text) {
+        try {
+          body = JSON.parse(text);
+        } catch {
+          body = text;
+        }
+      }
+    } catch {
+      // ignore body read errors
+    }
+    throw new ApiError(extractErrorMessage(body, fallback), res.status, res.statusText, body);
   }
   if (res.status === 204) return undefined as T;
   const text = await res.text();
@@ -164,7 +211,7 @@ export const api = {
   getCalendarEvents: (startISO: string, endISO: string) =>
     apiFetch<CalendarEvent[]>(
       `/calendar/events?start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`,
-    ).catch(() => [] as CalendarEvent[]),
+    ),
 
   savePriorities: (
     dailyPlanId: string,

@@ -18,6 +18,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { SageOrb } from "@/components/SageOrb";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { DrawerProvider, useDrawer } from "@/contexts/DrawerContext";
+import { ToastProvider } from "@/contexts/ToastContext";
 import Colors from "@/constants/colors";
 
 SplashScreen.preventAutoHideAsync();
@@ -94,11 +95,13 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
             <DrawerProvider>
-              <GestureHandlerRootView style={{ flex: 1 }}>
-                <KeyboardProvider>
-                  <RootLayoutContent />
-                </KeyboardProvider>
-              </GestureHandlerRootView>
+              <ToastProvider>
+                <GestureHandlerRootView style={{ flex: 1 }}>
+                  <KeyboardProvider>
+                    <RootLayoutContent />
+                  </KeyboardProvider>
+                </GestureHandlerRootView>
+              </ToastProvider>
             </DrawerProvider>
           </AuthProvider>
         </QueryClientProvider>

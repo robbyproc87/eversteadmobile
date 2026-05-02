@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useDrawer } from "@/contexts/DrawerContext";
+import { useToast } from "@/contexts/ToastContext";
 import Colors from "@/constants/colors";
 import { api } from "@/lib/api";
 import type {
@@ -112,6 +113,24 @@ function haptic(style: Haptics.ImpactFeedbackStyle = Haptics.ImpactFeedbackStyle
   if (Platform.OS !== "web") Haptics.impactAsync(style);
 }
 
+function formatSaveError(label: string, e: unknown): string {
+  const detail =
+    e instanceof Error && e.message && !/^API error:/i.test(e.message)
+      ? e.message
+      : null;
+  const base = `Couldn't save ${label}. Please try again.`;
+  return detail ? `${base} (${detail})` : base;
+}
+
+function formatLoadError(label: string, e: unknown): string {
+  const detail =
+    e instanceof Error && e.message && !/^API error:/i.test(e.message)
+      ? e.message
+      : null;
+  const base = `Couldn't load ${label}.`;
+  return detail ? `${base} (${detail})` : base;
+}
+
 interface SectionHeaderProps {
   icon: keyof typeof Feather.glyphMap;
   title: string;
@@ -136,6 +155,7 @@ interface PrioritiesProps {
 }
 
 function PrioritiesSection({ dailyPlanId, initial, onSaved }: PrioritiesProps) {
+  const { showError } = useToast();
   const [values, setValues] = useState<string[]>(initial);
   const [savingIdx, setSavingIdx] = useState<number | null>(null);
   const dirtyRef = React.useRef(false);
@@ -170,7 +190,10 @@ function PrioritiesSection({ dailyPlanId, initial, onSaved }: PrioritiesProps) {
       initialRef.current = snapshot;
       dirtyRef.current = false;
       onSaved();
-    } catch {
+    } catch (e) {
+      setValues(initialRef.current);
+      dirtyRef.current = false;
+      showError(formatSaveError("priority", e));
     } finally {
       setSavingIdx(null);
     }
@@ -211,6 +234,7 @@ interface GratitudesProps {
 function GratitudesSection({ dailyPlanId, initial, onSaved }: GratitudesProps) {
   const MIN_SLOTS = 3;
   const MAX = 6;
+  const { showError } = useToast();
   const [items, setItems] = useState(initial);
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState(false);
@@ -231,8 +255,9 @@ function GratitudesSection({ dailyPlanId, initial, onSaved }: GratitudesProps) {
         next.map((g, i) => ({ ordinal: i, text: g.text })),
       );
       onSaved();
-    } catch {
+    } catch (e) {
       setItems(rollback);
+      showError(formatSaveError("gratitude", e));
     } finally {
       setSaving(false);
     }
@@ -322,6 +347,7 @@ interface TodoSectionProps {
 }
 
 function TodoSection({ dailyPlanId, initial, onChange }: TodoSectionProps) {
+  const { showError } = useToast();
   const [todos, setTodos] = useState<DailyPlanTodo[]>(initial);
   const [newText, setNewText] = useState("");
   const [adding, setAdding] = useState(false);
@@ -349,9 +375,10 @@ function TodoSection({ dailyPlanId, initial, onChange }: TodoSectionProps) {
       const created = await api.addTodo(dailyPlanId, text, "manual");
       setTodos((prev) => prev.map((t) => (t.id === tempId ? created : t)));
       onChange();
-    } catch {
+    } catch (e) {
       setTodos((prev) => prev.filter((t) => t.id !== tempId));
       setNewText(text);
+      showError(formatSaveError("to-do", e));
     } finally {
       setAdding(false);
     }
@@ -366,10 +393,11 @@ function TodoSection({ dailyPlanId, initial, onChange }: TodoSectionProps) {
     try {
       await api.updateTodo(todo.id, { completed: target });
       onChange();
-    } catch {
+    } catch (e) {
       setTodos((prev) =>
         prev.map((t) => (t.id === todo.id ? { ...t, completed: !target } : t)),
       );
+      showError(formatSaveError("to-do", e));
     }
   };
 
@@ -380,8 +408,9 @@ function TodoSection({ dailyPlanId, initial, onChange }: TodoSectionProps) {
     try {
       await api.deleteTodo(todo.id);
       onChange();
-    } catch {
+    } catch (e) {
       setTodos(prev);
+      showError(formatSaveError("to-do", e));
     }
   };
 
@@ -639,6 +668,7 @@ function NudgeCard({ nudge }: { nudge: NudgeResponse | undefined }) {
 export default function PlannerScreen() {
   const insets = useSafeAreaInsets();
   const { openDrawer } = useDrawer();
+  const { showError } = useToast();
   const queryClient = useQueryClient();
   const webTopInset = Platform.OS === "web" ? 67 : 0;
 
@@ -714,6 +744,22 @@ export default function PlannerScreen() {
     eventsQuery.refetch();
     nudgeQuery.refetch();
   }, [dailyQuery, eventsQuery, nudgeQuery]);
+
+  const dailyError = dailyQuery.error;
+  const eventsError = eventsQuery.error;
+  const nudgeError = nudgeQuery.error;
+
+  useEffect(() => {
+    if (dailyError) showError(formatLoadError("today's plan", dailyError));
+  }, [dailyError, showError]);
+
+  useEffect(() => {
+    if (eventsError) showError(formatLoadError("calendar events", eventsError));
+  }, [eventsError, showError]);
+
+  useEffect(() => {
+    if (nudgeError) showError(formatLoadError("Sage's nudge", nudgeError));
+  }, [nudgeError, showError]);
 
   const invalidatePlan = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["planner", "daily", dateString] });
