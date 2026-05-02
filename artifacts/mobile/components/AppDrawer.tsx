@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Dimensions,
@@ -46,10 +46,12 @@ export function AppDrawer({ visible, onClose, onOpenSage }: AppDrawerProps) {
   const { user } = useAuth();
   const slideAnim = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
   const overlayAnim = useRef(new Animated.Value(0)).current;
+  const [closed, setClosed] = useState(!visible);
   const webTopInset = Platform.OS === "web" ? 67 : 0;
 
   useEffect(() => {
     if (visible) {
+      setClosed(false);
       Animated.parallel([
         Animated.timing(slideAnim, {
           toValue: 0,
@@ -74,7 +76,9 @@ export function AppDrawer({ visible, onClose, onOpenSage }: AppDrawerProps) {
           duration: 220,
           useNativeDriver: true,
         }),
-      ]).start();
+      ]).start(({ finished }) => {
+        if (finished) setClosed(true);
+      });
     }
   }, [visible, slideAnim, overlayAnim]);
 
@@ -98,7 +102,7 @@ export function AppDrawer({ visible, onClose, onOpenSage }: AppDrawerProps) {
     }, 100);
   };
 
-  if (!visible && slideAnim._value === -DRAWER_WIDTH) {
+  if (!visible && closed) {
     return null;
   }
 
