@@ -24,6 +24,7 @@ import type {
   DailyPlanTodo,
   NudgeResponse,
 } from "@/lib/api";
+import WeekView from "@/components/planner/WeekView";
 
 const SCHEDULE_START_HOUR = 5;
 const SCHEDULE_END_HOUR = 22;
@@ -52,6 +53,47 @@ function formatHeaderDate(d: Date): string {
     month: "long",
     day: "numeric",
   });
+}
+
+function getWeekStart(d: Date): Date {
+  const r = new Date(d);
+  r.setHours(0, 0, 0, 0);
+  r.setDate(r.getDate() - r.getDay());
+  return r;
+}
+
+function isSameWeek(a: Date, b: Date): boolean {
+  const ws1 = getWeekStart(a);
+  const ws2 = getWeekStart(b);
+  return ws1.getTime() === ws2.getTime();
+}
+
+function formatWeekRange(weekStart: Date): string {
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+  const end = new Date(weekStart);
+  end.setDate(end.getDate() + 6);
+  const sameMonth = weekStart.getMonth() === end.getMonth();
+  const sameYear = weekStart.getFullYear() === end.getFullYear();
+  if (sameMonth && sameYear) {
+    return `${months[weekStart.getMonth()]} ${weekStart.getDate()} – ${end.getDate()}`;
+  }
+  if (sameYear) {
+    return `${months[weekStart.getMonth()]} ${weekStart.getDate()} – ${months[end.getMonth()]} ${end.getDate()}`;
+  }
+  return `${months[weekStart.getMonth()]} ${weekStart.getDate()}, ${weekStart.getFullYear()} – ${months[end.getMonth()]} ${end.getDate()}, ${end.getFullYear()}`;
 }
 
 function formatHourLabel(hour: number): string {
@@ -605,14 +647,18 @@ export default function PlannerScreen() {
     d.setHours(0, 0, 0, 0);
     return d;
   });
+  const [view, setView] = useState<"day" | "week">("day");
 
   const dateString = formatDateParam(date);
   const viewingToday = isToday(date);
+  const weekStart = useMemo(() => getWeekStart(date), [date]);
+  const viewingThisWeek = useMemo(() => isSameWeek(date, new Date()), [date]);
 
   const dailyQuery = useQuery({
     queryKey: ["planner", "daily", dateString],
     queryFn: () => api.getDailyPlan(dateString),
     retry: 1,
+    enabled: view === "day",
   });
 
   const dayStart = useMemo(() => {
@@ -632,12 +678,14 @@ export default function PlannerScreen() {
     queryFn: () =>
       api.getCalendarEvents(dayStart.toISOString(), dayEnd.toISOString()),
     retry: 1,
+    enabled: view === "day",
   });
 
   const nudgeQuery = useQuery({
     queryKey: ["coach", "nudge", "Planner", dateString],
     queryFn: () => api.getNudge("Planner"),
     retry: 1,
+    enabled: view === "day",
   });
 
   const dailyPlan: DailyPlanData | undefined = dailyQuery.data;
@@ -677,14 +725,14 @@ export default function PlannerScreen() {
   const goPrev = () => {
     haptic();
     const d = new Date(date);
-    d.setDate(d.getDate() - 1);
+    d.setDate(d.getDate() - (view === "week" ? 7 : 1));
     setDate(d);
   };
 
   const goNext = () => {
     haptic();
     const d = new Date(date);
-    d.setDate(d.getDate() + 1);
+    d.setDate(d.getDate() + (view === "week" ? 7 : 1));
     setDate(d);
   };
 
@@ -694,6 +742,19 @@ export default function PlannerScreen() {
     d.setHours(0, 0, 0, 0);
     setDate(d);
   };
+
+  const switchView = (next: "day" | "week") => {
+    if (next === view) return;
+    haptic();
+    setView(next);
+  };
+
+  const handleJumpToDay = useCallback((target: Date) => {
+    setDate(target);
+    setView("day");
+  }, []);
+
+  const navAtToday = view === "week" ? viewingThisWeek : viewingToday;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + webTopInset }]}>
@@ -727,14 +788,63 @@ export default function PlannerScreen() {
           </View>
           <Pressable
             onPress={goToday}
-            disabled={viewingToday}
+            disabled={navAtToday}
             style={({ pressed }) => [
               styles.todayBtn,
-              viewingToday && { opacity: 0.4 },
+              navAtToday && { opacity: 0.4 },
               pressed && { opacity: 0.7 },
             ]}
           >
-            <Text style={styles.todayBtnText}>Today</Text>
+            <Text style={styles.todayBtnText}>
+              {view === "week" ? "This Week" : "Today"}
+            </Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.viewToggle}>
+          <Pressable
+            onPress={() => switchView("day")}
+            style={({ pressed }) => [
+              styles.viewToggleBtn,
+              view === "day" && styles.viewToggleBtnActive,
+              pressed && { opacity: 0.85 },
+            ]}
+          >
+            <Feather
+              name="sun"
+              size={14}
+              color={view === "day" ? Colors.dark : Colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.viewToggleText,
+                view === "day" && styles.viewToggleTextActive,
+              ]}
+            >
+              Day
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => switchView("week")}
+            style={({ pressed }) => [
+              styles.viewToggleBtn,
+              view === "week" && styles.viewToggleBtnActive,
+              pressed && { opacity: 0.85 },
+            ]}
+          >
+            <Feather
+              name="calendar"
+              size={14}
+              color={view === "week" ? Colors.dark : Colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.viewToggleText,
+                view === "week" && styles.viewToggleTextActive,
+              ]}
+            >
+              Week
+            </Text>
           </Pressable>
         </View>
 
@@ -750,10 +860,16 @@ export default function PlannerScreen() {
             <Feather name="chevron-left" size={22} color={Colors.dark} />
           </Pressable>
           <View style={styles.dateNavCenter}>
-            <Text style={styles.dateNavText}>{formatHeaderDate(date)}</Text>
-            {viewingToday ? (
+            <Text style={styles.dateNavText}>
+              {view === "week"
+                ? formatWeekRange(weekStart)
+                : formatHeaderDate(date)}
+            </Text>
+            {navAtToday ? (
               <View style={styles.todayChip}>
-                <Text style={styles.todayChipText}>TODAY</Text>
+                <Text style={styles.todayChipText}>
+                  {view === "week" ? "THIS WEEK" : "TODAY"}
+                </Text>
               </View>
             ) : null}
           </View>
@@ -769,7 +885,9 @@ export default function PlannerScreen() {
           </Pressable>
         </View>
 
-        {dailyQuery.isLoading ? (
+        {view === "week" ? (
+          <WeekView weekStart={weekStart} onJumpToDay={handleJumpToDay} />
+        ) : dailyQuery.isLoading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={Colors.gold} />
           </View>
@@ -898,6 +1016,37 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_700Bold",
     color: Colors.goldDark,
     letterSpacing: 0.6,
+  },
+  viewToggle: {
+    flexDirection: "row",
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    padding: 4,
+    marginBottom: 12,
+    gap: 4,
+  },
+  viewToggleBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  viewToggleBtnActive: {
+    backgroundColor: Colors.goldLight,
+  },
+  viewToggleText: {
+    fontSize: 13,
+    fontFamily: "Inter_500Medium",
+    color: Colors.textSecondary,
+  },
+  viewToggleTextActive: {
+    fontFamily: "Inter_700Bold",
+    color: Colors.dark,
   },
   loadingContainer: {
     paddingVertical: 60,

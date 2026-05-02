@@ -90,6 +90,39 @@ export interface NudgeResponse {
   proactivityLevel: number;
 }
 
+export interface TrulyExceptional {
+  id?: string;
+  category: string;
+  ordinal: number;
+  text: string | null;
+  source?: string | null;
+  status?: string | null;
+  importance?: string | null;
+}
+
+export interface WeeklyStoryDay {
+  id: string;
+  dayOfWeek: number;
+  narrative: string | null;
+  aiSuggested: boolean;
+}
+
+export interface WeeklyStoryObservation {
+  id: string;
+  content: string | null;
+}
+
+export interface WeekData {
+  id: string;
+  weekStart: string;
+  weekScore: number | null;
+  weeklyReviewInsights: string | null;
+  wdsNotes: string | null;
+  trulyExceptionals: TrulyExceptional[];
+  weeklyStoryDays: WeeklyStoryDay[];
+  weeklyStoryObservation: WeeklyStoryObservation | null;
+}
+
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession();
   const token = data?.session?.access_token;
@@ -174,4 +207,58 @@ export const api = {
 
   getNudge: (page: string) =>
     apiFetch<NudgeResponse>(`/coach/nudge?page=${encodeURIComponent(page)}`),
+
+  getWeek: (weekStart: string) =>
+    apiFetch<WeekData>(`/planner/week?weekStart=${weekStart}`),
+
+  updateWeek: (
+    id: string,
+    fields: {
+      wdsNotes?: string | null;
+      weekScore?: number | null;
+      weeklyReviewInsights?: string | null;
+    },
+  ) =>
+    apiFetch<unknown>("/planner/week", {
+      method: "PUT",
+      body: JSON.stringify({ id, ...fields }),
+    }),
+
+  saveTrulyExceptionals: (
+    weekId: string,
+    items: Array<{
+      category: string;
+      ordinal: number;
+      text: string;
+      source?: string;
+    }>,
+  ) =>
+    apiFetch<unknown>("/planner/week/truly-exceptionals", {
+      method: "PUT",
+      body: JSON.stringify({ weekId, items }),
+    }),
+
+  saveWeeklyStory: (
+    weekId: string,
+    days: Array<{ dayOfWeek: number; narrative: string }>,
+  ) =>
+    apiFetch<unknown>("/planner/week/story", {
+      method: "PUT",
+      body: JSON.stringify({ weekId, days }),
+    }),
+
+  saveWeeklyObservation: (weekId: string, content: string) =>
+    apiFetch<unknown>("/planner/week/story/observation", {
+      method: "PUT",
+      body: JSON.stringify({ weekId, content }),
+    }),
+
+  setNextWeekTEs: (
+    currentWeekId: string,
+    items: Array<{ category: string; ordinal: number; text: string }>,
+  ) =>
+    apiFetch<unknown>("/planner/week/review/set-next-week", {
+      method: "PUT",
+      body: JSON.stringify({ currentWeekId, items }),
+    }),
 };
