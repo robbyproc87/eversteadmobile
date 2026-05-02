@@ -213,6 +213,44 @@ export const api = {
       `/calendar/events?start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`,
     ),
 
+  createCalendarEvent: (input: {
+    title: string;
+    description?: string;
+    start: string;
+    end: string;
+    timeZone?: string;
+  }) =>
+    apiFetch<CalendarEvent>("/calendar/events", {
+      method: "POST",
+      body: JSON.stringify({
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        ...input,
+      }),
+    }),
+
+  updateCalendarEvent: (
+    id: string,
+    input: {
+      title?: string;
+      description?: string;
+      start?: string;
+      end?: string;
+      timeZone?: string;
+    },
+  ) =>
+    apiFetch<CalendarEvent>(`/calendar/events/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        ...input,
+      }),
+    }),
+
+  deleteCalendarEvent: (id: string) =>
+    apiFetch<unknown>(`/calendar/events/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+
   savePriorities: (
     dailyPlanId: string,
     items: Array<{ ordinal: number; text: string }>,

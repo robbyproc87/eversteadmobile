@@ -3,11 +3,14 @@ import * as Haptics from "expo-haptics";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -494,9 +497,16 @@ function TodoSection({ dailyPlanId, initial, onChange }: TodoSectionProps) {
 interface ScheduleProps {
   events: CalendarEvent[];
   viewingToday: boolean;
+  onSlotPress: (hour: number) => void;
+  onEventPress: (event: CalendarEvent) => void;
 }
 
-function ScheduleSection({ events, viewingToday }: ScheduleProps) {
+function ScheduleSection({
+  events,
+  viewingToday,
+  onSlotPress,
+  onEventPress,
+}: ScheduleProps) {
   const allDay = events.filter((e) => e.isAllDay);
   const timed = events.filter((e) => !e.isAllDay);
 
@@ -547,17 +557,22 @@ function ScheduleSection({ events, viewingToday }: ScheduleProps) {
       {allDay.length > 0 ? (
         <View style={styles.allDayRow}>
           {allDay.map((e) => (
-            <View
+            <Pressable
               key={e.id}
-              style={[
+              onPress={() => {
+                haptic();
+                onEventPress(e);
+              }}
+              style={({ pressed }) => [
                 styles.allDayChip,
                 { borderLeftColor: providerColor(e) },
+                pressed && { opacity: 0.7 },
               ]}
             >
               <Text style={styles.allDayChipText} numberOfLines={1}>
                 {e.title}
               </Text>
-            </View>
+            </Pressable>
           ))}
         </View>
       ) : null}
@@ -576,10 +591,32 @@ function ScheduleSection({ events, viewingToday }: ScheduleProps) {
           </View>
         ))}
 
+        {hours.slice(0, -1).map((h, idx) => (
+          <Pressable
+            key={`slot-${h}`}
+            onPress={() => {
+              haptic();
+              onSlotPress(h);
+            }}
+            style={({ pressed }) => [
+              styles.hourSlotPress,
+              {
+                top: idx * ROW_HEIGHT + 4,
+                height: ROW_HEIGHT - 4,
+              },
+              pressed && { backgroundColor: Colors.goldLight },
+            ]}
+          />
+        ))}
+
         {positioned.map(({ event, top, height, start, end }) => (
-          <View
+          <Pressable
             key={event.id}
-            style={[
+            onPress={() => {
+              haptic();
+              onEventPress(event);
+            }}
+            style={({ pressed }) => [
               styles.eventBlock,
               {
                 top,
@@ -587,6 +624,7 @@ function ScheduleSection({ events, viewingToday }: ScheduleProps) {
                 borderLeftColor: providerColor(event),
                 backgroundColor: providerBg(event),
               },
+              pressed && { opacity: 0.75 },
             ]}
           >
             <Text style={styles.eventTitle} numberOfLines={1}>
@@ -597,11 +635,11 @@ function ScheduleSection({ events, viewingToday }: ScheduleProps) {
                 {formatTimeRange(start, end)}
               </Text>
             ) : null}
-          </View>
+          </Pressable>
         ))}
 
         {nowLineTop != null ? (
-          <View style={[styles.nowLine, { top: nowLineTop }]}>
+          <View style={[styles.nowLine, { top: nowLineTop }]} pointerEvents="none">
             <View style={styles.nowDot} />
             <View style={styles.nowBar} />
           </View>
@@ -610,9 +648,416 @@ function ScheduleSection({ events, viewingToday }: ScheduleProps) {
 
       {timed.length === 0 && allDay.length === 0 ? (
         <Text style={styles.scheduleEmpty}>
-          No calendar events for this day
+          Tap an hour to add an event
         </Text>
       ) : null}
+    </View>
+  );
+}
+
+interface EventSheetState {
+  open: boolean;
+  mode: "create" | "edit";
+  event?: CalendarEvent;
+  defaultHour?: number;
+}
+
+interface CalendarEventSheetProps {
+  state: EventSheetState;
+  date: Date;
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function combineDateTime(date: Date, hour: number, minute: number): Date {
+  const d = new Date(date);
+  d.setHours(hour, minute, 0, 0);
+  return d;
+}
+
+function CalendarEventSheet({
+  state,
+  date,
+  onClose,
+  onSaved,
+}: CalendarEventSheetProps) {
+  const { open, mode, event, defaultHour } = state;
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [allDay, setAllDay] = useState(false);
+  const [startHour, setStartHour] = useState(9);
+  const [startMinute, setStartMinute] = useState(0);
+  const [endHour, setEndHour] = useState(10);
+  const [endMinute, setEndMinute] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setError(null);
+    setSaving(false);
+    setDeleting(false);
+    if (mode === "edit" && event) {
+      setTitle(event.title || "");
+      setDescription(event.description || "");
+      setAllDay(!!event.isAllDay);
+      const s = new Date(event.start);
+      const e = new Date(event.end);
+      if (!isNaN(s.getTime())) {
+        setStartHour(s.getHours());
+        setStartMinute(s.getMinutes());
+      }
+      if (!isNaN(e.getTime())) {
+        setEndHour(e.getHours());
+        setEndMinute(e.getMinutes());
+      }
+    } else {
+      setTitle("");
+      setDescription("");
+      setAllDay(false);
+      const h = defaultHour ?? 9;
+      setStartHour(h);
+      setStartMinute(0);
+      setEndHour(Math.min(h + 1, 23));
+      setEndMinute(0);
+    }
+  }, [open, mode, event, defaultHour]);
+
+  const readOnly = mode === "edit" && event ? !event.eversteadOwned : false;
+
+  const adjustStart = (deltaMinutes: number) => {
+    haptic(Haptics.ImpactFeedbackStyle.Light);
+    const total = startHour * 60 + startMinute + deltaMinutes;
+    const clamped = Math.max(0, Math.min(23 * 60 + 45, total));
+    const nh = Math.floor(clamped / 60);
+    const nm = clamped % 60;
+    setStartHour(nh);
+    setStartMinute(nm);
+    const startTotal = nh * 60 + nm;
+    const endTotal = endHour * 60 + endMinute;
+    if (endTotal <= startTotal) {
+      const nextEnd = Math.min(startTotal + 60, 23 * 60 + 59);
+      setEndHour(Math.floor(nextEnd / 60));
+      setEndMinute(nextEnd % 60);
+    }
+  };
+
+  const adjustEnd = (deltaMinutes: number) => {
+    haptic(Haptics.ImpactFeedbackStyle.Light);
+    const startTotal = startHour * 60 + startMinute;
+    const total = endHour * 60 + endMinute + deltaMinutes;
+    const clamped = Math.max(startTotal + 15, Math.min(23 * 60 + 59, total));
+    const nh = Math.floor(clamped / 60);
+    const nm = clamped % 60;
+    setEndHour(nh);
+    setEndMinute(nm);
+  };
+
+  const handleSave = async () => {
+    const trimmed = title.trim();
+    if (!trimmed) {
+      setError("Title is required");
+      return;
+    }
+    setError(null);
+    setSaving(true);
+    try {
+      let startISO: string;
+      let endISO: string;
+      if (allDay) {
+        const s = combineDateTime(date, 0, 0);
+        const e = combineDateTime(date, 23, 59);
+        startISO = s.toISOString();
+        endISO = e.toISOString();
+      } else {
+        const s = combineDateTime(date, startHour, startMinute);
+        const e = combineDateTime(date, endHour, endMinute);
+        if (e <= s) {
+          setError("End time must be after start time");
+          setSaving(false);
+          return;
+        }
+        startISO = s.toISOString();
+        endISO = e.toISOString();
+      }
+
+      if (mode === "create") {
+        await api.createCalendarEvent({
+          title: trimmed,
+          description: description.trim() || undefined,
+          start: startISO,
+          end: endISO,
+        });
+      } else if (event) {
+        await api.updateCalendarEvent(event.id, {
+          title: trimmed,
+          description: description.trim() || undefined,
+          start: startISO,
+          end: endISO,
+        });
+      }
+      haptic(Haptics.ImpactFeedbackStyle.Medium);
+      onSaved();
+      onClose();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : `Failed to ${mode === "create" ? "create" : "update"} event`,
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!event) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await api.deleteCalendarEvent(event.id);
+      haptic(Haptics.ImpactFeedbackStyle.Medium);
+      onSaved();
+      onClose();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to remove event",
+      );
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <Modal
+      visible={open}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={styles.sheetOverlay}
+      >
+        <Pressable style={styles.sheetBackdrop} onPress={onClose} />
+        <View style={styles.sheetContainer}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetHeader}>
+            <Text style={styles.sheetTitle}>
+              {mode === "create" ? "New Event" : "Edit Event"}
+            </Text>
+            <Pressable
+              onPress={onClose}
+              hitSlop={10}
+              style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+            >
+              <Feather name="x" size={22} color={Colors.textSecondary} />
+            </Pressable>
+          </View>
+
+          <ScrollView
+            style={styles.sheetScroll}
+            contentContainerStyle={styles.sheetContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Text style={styles.sheetDateLabel}>
+              {date.toLocaleDateString("en-US", {
+                weekday: "long",
+                month: "long",
+                day: "numeric",
+              })}
+            </Text>
+
+            {readOnly ? (
+              <View style={styles.readOnlyBanner}>
+                <Feather name="lock" size={12} color={Colors.textSecondary} />
+                <Text style={styles.readOnlyText}>
+                  External events can't be edited from Everstead.
+                </Text>
+              </View>
+            ) : null}
+
+            <Text style={styles.sheetFieldLabel}>Title</Text>
+            <TextInput
+              style={styles.sheetInput}
+              value={title}
+              onChangeText={setTitle}
+              placeholder="Event title"
+              placeholderTextColor={Colors.textTertiary}
+              editable={!readOnly}
+            />
+
+            <View style={styles.sheetSwitchRow}>
+              <Text style={styles.sheetFieldLabel}>All-day</Text>
+              <Switch
+                value={allDay}
+                onValueChange={(v) => {
+                  haptic();
+                  setAllDay(v);
+                }}
+                disabled={readOnly}
+                trackColor={{ false: Colors.cardBorder, true: Colors.gold }}
+                thumbColor={Colors.white}
+              />
+            </View>
+
+            {!allDay ? (
+              <>
+                <Text style={styles.sheetFieldLabel}>Start</Text>
+                <TimeStepper
+                  hour={startHour}
+                  minute={startMinute}
+                  onAdjust={adjustStart}
+                  disabled={readOnly}
+                />
+
+                <Text style={styles.sheetFieldLabel}>End</Text>
+                <TimeStepper
+                  hour={endHour}
+                  minute={endMinute}
+                  onAdjust={adjustEnd}
+                  disabled={readOnly}
+                />
+              </>
+            ) : null}
+
+            <Text style={styles.sheetFieldLabel}>Description</Text>
+            <TextInput
+              style={[styles.sheetInput, styles.sheetTextarea]}
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Optional description"
+              placeholderTextColor={Colors.textTertiary}
+              editable={!readOnly}
+              multiline
+              numberOfLines={3}
+            />
+
+            {error ? <Text style={styles.sheetError}>{error}</Text> : null}
+          </ScrollView>
+
+          <View style={styles.sheetFooter}>
+            {mode === "edit" && event && !readOnly ? (
+              <Pressable
+                onPress={handleDelete}
+                disabled={deleting || saving}
+                style={({ pressed }) => [
+                  styles.sheetDeleteBtn,
+                  (deleting || saving) && { opacity: 0.5 },
+                  pressed && { opacity: 0.7 },
+                ]}
+              >
+                {deleting ? (
+                  <ActivityIndicator size="small" color={Colors.error} />
+                ) : (
+                  <Feather name="trash-2" size={16} color={Colors.error} />
+                )}
+                <Text style={styles.sheetDeleteText}>Remove</Text>
+              </Pressable>
+            ) : (
+              <View style={{ flex: 1 }} />
+            )}
+            <Pressable
+              onPress={onClose}
+              style={({ pressed }) => [
+                styles.sheetCancelBtn,
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <Text style={styles.sheetCancelText}>Cancel</Text>
+            </Pressable>
+            {!readOnly ? (
+              <Pressable
+                onPress={handleSave}
+                disabled={saving || deleting || !title.trim()}
+                style={({ pressed }) => [
+                  styles.sheetSaveBtn,
+                  (saving || deleting || !title.trim()) && { opacity: 0.5 },
+                  pressed && { opacity: 0.85 },
+                ]}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color={Colors.white} />
+                ) : (
+                  <Text style={styles.sheetSaveText}>
+                    {mode === "create" ? "Create" : "Save"}
+                  </Text>
+                )}
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+interface TimeStepperProps {
+  hour: number;
+  minute: number;
+  onAdjust: (deltaMinutes: number) => void;
+  disabled?: boolean;
+}
+
+function TimeStepper({ hour, minute, onAdjust, disabled }: TimeStepperProps) {
+  const display = (() => {
+    const h12 = hour % 12 || 12;
+    const ampm = hour < 12 ? "AM" : "PM";
+    return `${h12}:${pad2(minute)} ${ampm}`;
+  })();
+  return (
+    <View style={styles.stepperRow}>
+      <Pressable
+        onPress={() => onAdjust(-60)}
+        disabled={disabled}
+        style={({ pressed }) => [
+          styles.stepperBtn,
+          disabled && { opacity: 0.4 },
+          pressed && { opacity: 0.7 },
+        ]}
+      >
+        <Text style={styles.stepperBtnText}>-1h</Text>
+      </Pressable>
+      <Pressable
+        onPress={() => onAdjust(-15)}
+        disabled={disabled}
+        style={({ pressed }) => [
+          styles.stepperBtn,
+          disabled && { opacity: 0.4 },
+          pressed && { opacity: 0.7 },
+        ]}
+      >
+        <Text style={styles.stepperBtnText}>-15m</Text>
+      </Pressable>
+      <View style={styles.stepperValue}>
+        <Text style={styles.stepperValueText}>{display}</Text>
+      </View>
+      <Pressable
+        onPress={() => onAdjust(15)}
+        disabled={disabled}
+        style={({ pressed }) => [
+          styles.stepperBtn,
+          disabled && { opacity: 0.4 },
+          pressed && { opacity: 0.7 },
+        ]}
+      >
+        <Text style={styles.stepperBtnText}>+15m</Text>
+      </Pressable>
+      <Pressable
+        onPress={() => onAdjust(60)}
+        disabled={disabled}
+        style={({ pressed }) => [
+          styles.stepperBtn,
+          disabled && { opacity: 0.4 },
+          pressed && { opacity: 0.7 },
+        ]}
+      >
+        <Text style={styles.stepperBtnText}>+1h</Text>
+      </Pressable>
     </View>
   );
 }
@@ -767,6 +1212,27 @@ export default function PlannerScreen() {
     queryClient.invalidateQueries({ queryKey: ["plan", "today"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard", "stats"] });
   }, [queryClient, dateString]);
+
+  const invalidateEvents = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["calendar", "events"] });
+  }, [queryClient]);
+
+  const [eventSheet, setEventSheet] = useState<EventSheetState>({
+    open: false,
+    mode: "create",
+  });
+
+  const openCreateSheet = useCallback((hour: number) => {
+    setEventSheet({ open: true, mode: "create", defaultHour: hour });
+  }, []);
+
+  const openEditSheet = useCallback((event: CalendarEvent) => {
+    setEventSheet({ open: true, mode: "edit", event });
+  }, []);
+
+  const closeSheet = useCallback(() => {
+    setEventSheet((prev) => ({ ...prev, open: false }));
+  }, []);
 
   const goPrev = () => {
     haptic();
@@ -944,6 +1410,8 @@ export default function PlannerScreen() {
             <ScheduleSection
               events={eventsQuery.data || []}
               viewingToday={viewingToday}
+              onSlotPress={openCreateSheet}
+              onEventPress={openEditSheet}
             />
 
             <PrioritiesSection
@@ -966,6 +1434,13 @@ export default function PlannerScreen() {
           </>
         )}
       </ScrollView>
+
+      <CalendarEventSheet
+        state={eventSheet}
+        date={date}
+        onClose={closeSheet}
+        onSaved={invalidateEvents}
+      />
     </View>
   );
 }
@@ -1405,5 +1880,196 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     color: Colors.dark,
     lineHeight: 19,
+  },
+  hourSlotPress: {
+    position: "absolute",
+    left: LEFT_GUTTER,
+    right: 4,
+    borderRadius: 6,
+  },
+  sheetOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  sheetBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.4)",
+  },
+  sheetContainer: {
+    backgroundColor: Colors.card,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: Platform.OS === "ios" ? 32 : 16,
+    maxHeight: "92%",
+  },
+  sheetHandle: {
+    alignSelf: "center",
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.cardBorder,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.separator,
+  },
+  sheetTitle: {
+    fontSize: 17,
+    fontFamily: "Inter_700Bold",
+    color: Colors.dark,
+  },
+  sheetScroll: {
+    maxHeight: 480,
+  },
+  sheetContent: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 20,
+    gap: 8,
+  },
+  sheetDateLabel: {
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
+    color: Colors.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginBottom: 4,
+  },
+  sheetFieldLabel: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    color: Colors.textSecondary,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  sheetInput: {
+    fontSize: 15,
+    fontFamily: "Inter_400Regular",
+    color: Colors.dark,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: Colors.background,
+  },
+  sheetTextarea: {
+    minHeight: 72,
+    textAlignVertical: "top",
+  },
+  sheetSwitchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 12,
+  },
+  sheetError: {
+    fontSize: 13,
+    fontFamily: "Inter_500Medium",
+    color: Colors.error,
+    marginTop: 12,
+  },
+  sheetFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.separator,
+  },
+  sheetDeleteBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    marginRight: "auto",
+  },
+  sheetDeleteText: {
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+    color: Colors.error,
+  },
+  sheetCancelBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    backgroundColor: Colors.card,
+  },
+  sheetCancelText: {
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+    color: Colors.dark,
+  },
+  sheetSaveBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: Colors.gold,
+    minWidth: 80,
+    alignItems: "center",
+  },
+  sheetSaveText: {
+    fontSize: 13,
+    fontFamily: "Inter_700Bold",
+    color: Colors.white,
+  },
+  readOnlyBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: Colors.background,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 4,
+  },
+  readOnlyText: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    color: Colors.textSecondary,
+    flex: 1,
+  },
+  stepperRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  stepperBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    backgroundColor: Colors.background,
+    minWidth: 40,
+    alignItems: "center",
+  },
+  stepperBtnText: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    color: Colors.dark,
+  },
+  stepperValue: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 8,
+    backgroundColor: Colors.goldLight,
+    borderRadius: 8,
+  },
+  stepperValueText: {
+    fontSize: 14,
+    fontFamily: "Inter_700Bold",
+    color: Colors.goldDark,
   },
 });
