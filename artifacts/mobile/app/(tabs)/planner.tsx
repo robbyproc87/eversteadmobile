@@ -29,6 +29,7 @@ import type {
   NudgeResponse,
 } from "@/lib/api";
 import WeekView from "@/components/planner/WeekView";
+import { MenuIcon } from "@/components/MenuIcon";
 
 const SCHEDULE_START_HOUR = 5;
 const SCHEDULE_END_HOUR = 22;
@@ -1424,6 +1425,8 @@ export default function PlannerScreen() {
       >
         <View style={styles.headerRow}>
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open menu"
             onPress={() => {
               haptic();
               openDrawer();
@@ -1433,7 +1436,7 @@ export default function PlannerScreen() {
               pressed && { opacity: 0.6 },
             ]}
           >
-            <Feather name="menu" size={22} color={Colors.dark} />
+            <MenuIcon size={22} color={Colors.dark} />
           </Pressable>
           <View style={styles.headerCenter}>
             <Text style={styles.title}>Planner</Text>
@@ -1610,8 +1613,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   headerButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: 20,
     backgroundColor: Colors.card,
     justifyContent: "center",

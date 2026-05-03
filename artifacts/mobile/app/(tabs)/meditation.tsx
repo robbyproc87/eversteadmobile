@@ -23,6 +23,7 @@ import Colors from "@/constants/colors";
 import { api } from "@/lib/api";
 import type { GeneratedMeditation, MeditationSession } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
+import { MenuIcon } from "@/components/MenuIcon";
 
 type FeatherIconName = React.ComponentProps<typeof Feather>["name"];
 
@@ -385,6 +386,8 @@ export default function MeditationScreen() {
     <View style={[styles.container, { paddingTop: insets.top + webTopInset }]}>
       <View style={styles.headerRow}>
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open menu"
           onPress={() => {
             if (Platform.OS !== "web") {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -396,7 +399,7 @@ export default function MeditationScreen() {
             pressed && { opacity: 0.6 },
           ]}
         >
-          <Feather name="menu" size={22} color={Colors.dark} />
+          <MenuIcon size={22} color={Colors.dark} />
         </Pressable>
         <Text style={styles.title}>Meditation</Text>
         <View style={styles.menuButton} />
@@ -807,9 +810,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   menuButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: "center",
     alignItems: "center",
   },

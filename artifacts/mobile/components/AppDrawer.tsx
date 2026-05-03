@@ -152,6 +152,8 @@ export function AppDrawer({ visible, onClose, onOpenSage }: AppDrawerProps) {
           </View>
           <Text style={styles.logoText}>Everstead</Text>
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Close menu"
             onPress={onClose}
             style={({ pressed }) => [
               styles.closeButton,
@@ -290,9 +292,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: Colors.background,
     justifyContent: "center",
     alignItems: "center",

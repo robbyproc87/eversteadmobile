@@ -20,6 +20,7 @@ import { useDrawer } from "@/contexts/DrawerContext";
 import Colors from "@/constants/colors";
 import { api } from "@/lib/api";
 import type { ActivityItem } from "@/lib/api";
+import { MenuIcon } from "@/components/MenuIcon";
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -184,6 +185,8 @@ export default function TodayScreen() {
       >
         <View style={styles.header}>
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open menu"
             onPress={() => {
               if (Platform.OS !== "web")
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -194,7 +197,7 @@ export default function TodayScreen() {
               pressed && { opacity: 0.6 },
             ]}
           >
-            <Feather name="menu" size={22} color={Colors.dark} />
+            <MenuIcon size={22} color={Colors.dark} />
           </Pressable>
           <View style={styles.headerTextContainer}>
             <Text style={styles.greeting}>
@@ -218,6 +221,10 @@ export default function TodayScreen() {
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.statsStrip}
+          style={styles.statsStripWrap}
+          decelerationRate="fast"
+          snapToInterval={132}
+          snapToAlignment="start"
         >
           <StatCard
             label="Weekly Score"
@@ -350,9 +357,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: Colors.card,
     justifyContent: "center",
     alignItems: "center",
@@ -370,15 +377,20 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     color: Colors.textSecondary,
   },
+  statsStripWrap: {
+    marginHorizontal: -20,
+  },
   statsStrip: {
     paddingBottom: 4,
+    paddingHorizontal: 20,
+    paddingRight: 40,
     gap: 12,
   },
   statCard: {
     backgroundColor: Colors.card,
     borderRadius: 14,
     padding: 16,
-    minWidth: 120,
+    width: 120,
     alignItems: "flex-start",
     borderWidth: 1,
     borderColor: Colors.cardBorder,

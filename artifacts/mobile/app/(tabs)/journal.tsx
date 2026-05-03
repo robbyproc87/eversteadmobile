@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { useDrawer } from "@/contexts/DrawerContext";
 import { useToast } from "@/contexts/ToastContext";
+import { MenuIcon } from "@/components/MenuIcon";
 import {
   api,
   ApiError,
@@ -186,6 +187,8 @@ export default function JournalScreen() {
     <View style={[styles.container, { paddingTop: insets.top + webTopInset }]}>
       <View style={styles.headerRow}>
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open menu"
           onPress={() => {
             haptic();
             openDrawer();
@@ -195,7 +198,7 @@ export default function JournalScreen() {
             pressed && { opacity: 0.6 },
           ]}
         >
-          <Feather name="menu" size={22} color={Colors.dark} />
+          <MenuIcon size={22} color={Colors.dark} />
         </Pressable>
         <Text style={styles.title}>Journal</Text>
         <View style={styles.headerBtn} />
@@ -284,9 +287,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   headerBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: "center",
     alignItems: "center",
   },
