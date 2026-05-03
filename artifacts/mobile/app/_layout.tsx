@@ -33,7 +33,10 @@ function RootLayoutContent() {
 
   const isSageOpen = segments.includes("sage" as never);
   const isLoginScreen = segments.includes("login" as never);
-  const showOrb = session && !isSageOpen && !isLoginScreen;
+  const isJournalScreen =
+    segments.includes("journal" as never) ||
+    segments.includes("journal-entry" as never);
+  const showOrb = session && !isSageOpen && !isLoginScreen && !isJournalScreen;
 
   return (
     <>

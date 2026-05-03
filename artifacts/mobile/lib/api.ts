@@ -125,12 +125,26 @@ export interface WeekData {
   weeklyStoryObservation: WeeklyStoryObservation | null;
 }
 
-async function getAuthHeaders(): Promise<Record<string, string>> {
+export const PREVIEW_TOKEN = "dev-bypass";
+
+export async function isPreviewSession(): Promise<boolean> {
+  const { data } = await supabase.auth.getSession();
+  return data?.session?.access_token === PREVIEW_TOKEN;
+}
+
+async function getAuthHeaders(): Promise<{
+  headers: Record<string, string>;
+  preview: boolean;
+}> {
   const { data } = await supabase.auth.getSession();
   const token = data?.session?.access_token;
+  const preview = token === PREVIEW_TOKEN;
   return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    headers: {
+      "Content-Type": "application/json",
+      ...(token && !preview ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    preview,
   };
 }
 
@@ -146,6 +160,21 @@ export class ApiError extends Error {
     this.statusText = statusText;
     this.body = body;
   }
+}
+
+export class PreviewAuthError extends ApiError {
+  constructor() {
+    super(
+      "Sign in to see your data",
+      401,
+      "Preview Mode",
+    );
+    this.name = "PreviewAuthError";
+  }
+}
+
+export function isPreviewAuthError(err: unknown): boolean {
+  return err instanceof PreviewAuthError;
 }
 
 function extractErrorMessage(body: unknown, fallback: string): string {
@@ -164,7 +193,10 @@ export async function apiFetch<T>(
   path: string,
   options?: RequestInit,
 ): Promise<T> {
-  const headers = await getAuthHeaders();
+  const { headers, preview } = await getAuthHeaders();
+  if (preview) {
+    throw new PreviewAuthError();
+  }
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, {
@@ -931,7 +963,10 @@ export const coachApi = {
     body: CoachChatRequest,
     signal?: AbortSignal,
   ): AsyncGenerator<CoachStreamChunk> {
-    const headers = await getAuthHeaders();
+    const { headers, preview } = await getAuthHeaders();
+    if (preview) {
+      throw new PreviewAuthError();
+    }
     let res: Response;
     try {
       res = (await expoFetch(`${API_BASE}/coach/chat`, {

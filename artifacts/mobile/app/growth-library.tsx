@@ -32,6 +32,7 @@ import {
   type OgMetadata,
   booksApi,
   coursesApi,
+  isPreviewAuthError,
   normalizeImageUrl,
 } from "@/lib/api";
 
@@ -109,6 +110,7 @@ function BooksTab() {
   const { showError, showSuccess } = useToast();
   const [books, setBooks] = useState<Book[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isPreview, setIsPreview] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -119,12 +121,18 @@ function BooksTab() {
       if (isRefresh) setRefreshing(true);
       else setLoading(true);
       setError(null);
+      setIsPreview(false);
       try {
         const data = await booksApi.list();
         setBooks(data ?? []);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Could not load books";
-        setError(msg);
+        if (isPreviewAuthError(e)) {
+          setBooks([]);
+          setIsPreview(true);
+        } else {
+          const msg = e instanceof Error ? e.message : "Could not load books";
+          setError(msg);
+        }
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -171,6 +179,12 @@ function BooksTab() {
           </View>
         ) : error ? (
           <ErrorBlock message={error} onRetry={() => load()} />
+        ) : isPreview ? (
+          <PreviewSignInBlock
+            icon="book"
+            title="Sign in to see your books"
+            subtext="You're in Preview Mode. Sign in to track your reading and add books to your library."
+          />
         ) : !books || books.length === 0 ? (
           <EmptyBlock
             icon="book"
@@ -536,6 +550,7 @@ function CoursesTab() {
   const { showError, showSuccess } = useToast();
   const [courses, setCourses] = useState<Course[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isPreview, setIsPreview] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -545,12 +560,18 @@ function CoursesTab() {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
     setError(null);
+    setIsPreview(false);
     try {
       const data = await coursesApi.list();
       setCourses(data ?? []);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Could not load courses";
-      setError(msg);
+      if (isPreviewAuthError(e)) {
+        setCourses([]);
+        setIsPreview(true);
+      } else {
+        const msg = e instanceof Error ? e.message : "Could not load courses";
+        setError(msg);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -595,6 +616,12 @@ function CoursesTab() {
           </View>
         ) : error ? (
           <ErrorBlock message={error} onRetry={() => load()} />
+        ) : isPreview ? (
+          <PreviewSignInBlock
+            icon="play-circle"
+            title="Sign in to see your courses"
+            subtext="You're in Preview Mode. Sign in to track your learning and add courses to your library."
+          />
         ) : !courses || courses.length === 0 ? (
           <EmptyBlock
             icon="play-circle"
@@ -1041,6 +1068,26 @@ function EmptyBlock({
       >
         <Text style={styles.primaryButtonText}>{ctaLabel}</Text>
       </Pressable>
+    </View>
+  );
+}
+
+function PreviewSignInBlock({
+  icon,
+  title,
+  subtext,
+}: {
+  icon: keyof typeof Feather.glyphMap;
+  title: string;
+  subtext: string;
+}) {
+  return (
+    <View style={styles.emptyState}>
+      <View style={styles.emptyIcon}>
+        <Feather name={icon} size={28} color={Colors.gold} />
+      </View>
+      <Text style={styles.emptyTitle}>{title}</Text>
+      <Text style={styles.emptySubtext}>{subtext}</Text>
     </View>
   );
 }

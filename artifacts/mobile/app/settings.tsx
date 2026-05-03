@@ -24,6 +24,7 @@ import {
   type BillingStatus,
   api,
   integrationsApi,
+  isPreviewAuthError,
   normalizeImageUrl,
 } from "@/lib/api";
 
@@ -51,6 +52,7 @@ function SettingsContent() {
   const [billingLoading, setBillingLoading] = useState(true);
   const [calendar, setCalendar] = useState<IntegrationStatus | null>(null);
   const [calendarLoading, setCalendarLoading] = useState(true);
+  const [isPreview, setIsPreview] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(
@@ -64,21 +66,33 @@ function SettingsContent() {
         api.getBillingStatus(),
         integrationsApi.getCalendarStatus(),
       ]);
+      let preview = false;
       if (billingRes.status === "fulfilled") {
         setBilling(billingRes.value ?? null);
         setBillingError(null);
       } else {
         const err = billingRes.reason;
         setBilling(null);
-        setBillingError(
-          err instanceof Error ? err.message : "Could not load billing",
-        );
+        if (isPreviewAuthError(err)) {
+          preview = true;
+          setBillingError(null);
+        } else {
+          setBillingError(
+            err instanceof Error ? err.message : "Could not load billing",
+          );
+        }
       }
       if (calRes.status === "fulfilled") {
         setCalendar(calRes.value);
       } else {
-        setCalendar({ connected: false, reason: "Unknown" });
+        if (isPreviewAuthError(calRes.reason)) {
+          preview = true;
+          setCalendar({ connected: false, reason: "Preview mode" });
+        } else {
+          setCalendar({ connected: false, reason: "Unknown" });
+        }
       }
+      setIsPreview(preview);
       setBillingLoading(false);
       setCalendarLoading(false);
       setRefreshing(false);
@@ -186,12 +200,23 @@ function SettingsContent() {
         </View>
       </View>
 
+      {isPreview ? (
+        <View style={styles.previewBanner}>
+          <Feather name="info" size={16} color={Colors.gold} />
+          <Text style={styles.previewBannerText}>
+            Preview Mode — sign in to see your subscription, integrations, and
+            personal data.
+          </Text>
+        </View>
+      ) : null}
+
       <SectionHeader label="Subscription" />
       <View style={styles.sectionCard}>
         <BillingRow
           loading={billingLoading}
           billing={billing}
           error={billingError}
+          isPreview={isPreview}
         />
       </View>
 
@@ -248,15 +273,31 @@ function BillingRow({
   loading,
   billing,
   error,
+  isPreview,
 }: {
   loading: boolean;
   billing: BillingStatus | null;
   error: string | null;
+  isPreview?: boolean;
 }) {
   if (loading) {
     return (
       <View style={[styles.menuItem, { justifyContent: "center" }]}>
         <ActivityIndicator color={Colors.gold} />
+      </View>
+    );
+  }
+
+  if (isPreview) {
+    return (
+      <View style={styles.menuItem}>
+        <View style={styles.menuItemIconWrap}>
+          <Feather name="credit-card" size={18} color={Colors.textSecondary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.menuItemLabel}>Subscription</Text>
+          <Text style={styles.menuItemSub}>Sign in to see your plan</Text>
+        </View>
       </View>
     );
   }
@@ -489,6 +530,24 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 6,
     marginLeft: 4,
+  },
+  previewBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    backgroundColor: Colors.goldLight,
+    borderWidth: 1,
+    borderColor: Colors.gold,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
+  },
+  previewBannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: "Inter_500Medium",
+    color: Colors.dark,
+    lineHeight: 18,
   },
   sectionCard: {
     backgroundColor: Colors.card,

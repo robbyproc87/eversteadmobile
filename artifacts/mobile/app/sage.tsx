@@ -367,9 +367,12 @@ export default function SageScreen() {
     [activeConvId, activeCoachId, conversations, queryClient, showToast],
   );
 
+  const isPreview = session?.access_token === "dev-bypass";
+
   // Auto-trigger greeting when the user lands on a coach with no prior conversation.
   useEffect(() => {
     if (!session) return;
+    if (isPreview) return;
     if (convLoading || msgLoading) return;
     if (isStreaming || isSending) return;
     if (activeConvId) return;
@@ -384,6 +387,7 @@ export default function SageScreen() {
     sendRaw(GREETING_TRIGGER, { isGreeting: true });
   }, [
     session,
+    isPreview,
     activeConvId,
     convLoading,
     msgLoading,
@@ -558,8 +562,14 @@ export default function SageScreen() {
 
         <KeyboardAvoidingView
           style={styles.chatArea}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          keyboardVerticalOffset={0}
+          behavior={
+            Platform.OS === "ios"
+              ? "padding"
+              : Platform.OS === "android"
+                ? "height"
+                : undefined
+          }
+          keyboardVerticalOffset={Platform.OS === "ios" ? insets.bottom : 0}
         >
           <ScrollView
             ref={scrollRef}
@@ -593,10 +603,14 @@ export default function SageScreen() {
                 <View style={styles.welcomeCard}>
                   <CoachOrb coachId={activeCoachId} size={56} />
                   <Text style={styles.welcomeTitle}>
-                    Hey, what's on your mind?
+                    {isPreview
+                      ? `Sign in to chat with ${activeCoach.name}`
+                      : "Hey, what's on your mind?"}
                   </Text>
                   <Text style={styles.welcomeSubtext}>
-                    {activeCoach.description}
+                    {isPreview
+                      ? "You're in Preview Mode. Coaching conversations are saved to your account — sign in to start one."
+                      : activeCoach.description}
                   </Text>
                 </View>
               )}
@@ -640,13 +654,17 @@ export default function SageScreen() {
           <View style={styles.inputBar}>
             <TextInput
               style={styles.textInput}
-              placeholder={`Message ${activeCoach.name}…`}
+              placeholder={
+                isPreview
+                  ? "Sign in to send messages"
+                  : `Message ${activeCoach.name}…`
+              }
               placeholderTextColor={Colors.textTertiary}
               value={input}
               onChangeText={setInput}
               multiline
               maxLength={2000}
-              editable={!isStreaming && !isSending}
+              editable={!isStreaming && !isSending && !isPreview}
               onSubmitEditing={Platform.OS === "web" ? handleSend : undefined}
               blurOnSubmit={false}
             />
@@ -655,11 +673,13 @@ export default function SageScreen() {
               style={({ pressed }) => [
                 styles.sendButton,
                 { backgroundColor: activeCoach.color },
-                (!input.trim() || isStreaming || isSending) &&
+                (!input.trim() || isStreaming || isSending || isPreview) &&
                   styles.sendButtonDisabled,
-                pressed && input.trim() && { opacity: 0.85 },
+                pressed && input.trim() && !isPreview && { opacity: 0.85 },
               ]}
-              disabled={!input.trim() || isStreaming || isSending}
+              disabled={
+                !input.trim() || isStreaming || isSending || isPreview
+              }
               accessibilityLabel="Send message"
             >
               {isStreaming || isSending ? (

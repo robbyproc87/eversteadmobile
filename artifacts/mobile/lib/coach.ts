@@ -39,7 +39,7 @@ export const COACHES: Record<string, CoachDefinition> = {
     shortDescription: "Calm, present focus",
     description:
       "I'll help you slow down, breathe, and find clarity. Bring me whatever's swirling in your mind.",
-    color: "#9b7cd4",
+    color: "#8B5CF6",
     gradientFrom: "#dccdf2",
     gradientTo: "#6e4caf",
   },
