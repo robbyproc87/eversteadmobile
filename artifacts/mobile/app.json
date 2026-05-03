@@ -9,15 +9,22 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/splash-icon.png",
+      "image": "./assets/images/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#faf8f3"
     },
     "ios": {
-      "supportsTablet": false
+      "bundleIdentifier": "app.everstead.mobile",
+      "supportsTablet": false,
+      "buildNumber": "1"
     },
     "android": {
-      "package": "app.everstead.mobile"
+      "package": "app.everstead.mobile",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#faf8f3"
+      }
     },
     "web": {
       "favicon": "./assets/images/icon.png"
