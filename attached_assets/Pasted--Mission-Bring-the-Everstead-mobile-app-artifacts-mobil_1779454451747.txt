@@ -1,0 +1,192 @@
+🎯 Mission
+Bring the Everstead mobile app (artifacts/mobile/) to feature parity with the Everstead web app for Google Play Store beta submission. The web app is the source of truth for features and behavior; you'll find the relevant web source code in reference-for mobile/ (in the mobile repo) and additionally in the web repo at github.com/robbyproc87/everstead under src/ if you need anything not in the reference folder.
+This is a large, multi-sprint effort. Do not start writing code yet. Read this entire prompt, ask me clarifying questions in chat first (do not assume), then produce a written plan for Sprint 1 only and wait for my approval before executing. After Sprint 1 ships and I confirm it works on my Samsung Galaxy Fold 7, repeat the same plan→approve→execute loop for each subsequent sprint.
+Tone and quality bar: Match the existing mobile codebase patterns (React Query, expo-router, lib/api.ts for all API calls, contexts/ for shared state, RN StyleSheet rather than NativeWind). Do not introduce new architectural patterns or rewrites. Maintain TypeScript strictness. Every new component gets its own file. No dead code. No console logs left in production.
+Do not touch the web app codebase. All work is in artifacts/mobile/.
+
+⚠️ Critical reading — do this before writing the plan
+Read these files in full before proposing anything:
+Mobile current state:
+
+artifacts/mobile/app/_layout.tsx
+artifacts/mobile/app/login.tsx
+artifacts/mobile/app/(tabs)/index.tsx
+artifacts/mobile/app/(tabs)/planner.tsx
+artifacts/mobile/app/(tabs)/journal.tsx
+artifacts/mobile/app/(tabs)/meditation.tsx
+artifacts/mobile/app/sage.tsx
+artifacts/mobile/app/journal-entry.tsx
+artifacts/mobile/app/life-architecture.tsx
+artifacts/mobile/app/settings.tsx
+artifacts/mobile/components/planner/WeekView.tsx
+artifacts/mobile/components/SageOrb.tsx
+artifacts/mobile/contexts/AuthContext.tsx
+artifacts/mobile/lib/api.ts
+artifacts/mobile/lib/coach.ts
+artifacts/mobile/constants/colors.ts
+artifacts/mobile/app.json
+artifacts/mobile/eas.json
+artifacts/mobile/package.json
+
+Web reference (in reference-for mobile/ folder of mobile repo):
+
+All component-coach-*.tsx
+All component-meditation-*.tsx
+All component-planner-*.tsx
+All component-journal-*.tsx
+All api-coach-*.ts, api-journal-*.ts, api-meditation-*.ts, api-planner-*.ts
+page-journal.tsx, page-meditation.tsx, page-coach.tsx, page-planner.tsx
+
+Behavior differences mobile must respect (do not blindly port):
+
+Mobile is React Native, not Next.js — no Link/router from Next, use expo-router's useRouter and Link
+No localStorage — use expo-secure-store for sensitive items, @react-native-async-storage/async-storage for non-sensitive
+No HTML inputs — RN equivalents (TextInput, Pressable, etc.)
+No Tailwind — RN StyleSheet matching the existing mobile aesthetic in constants/colors.ts
+API calls go through lib/api.ts apiFetch/apiFetch-style helpers, not raw fetch — this is how Preview Mode and 402/Pro handling work uniformly
+Replit's Expo proxy is already configured in package.json dev script; do not change it
+
+
+🚦 Decisions I need from you before Sprint 2 — flag in your Sprint 1 plan
+Decision 1 — Coach color palette. Mobile lib/coach.ts currently uses brand-aligned colors (Sage #f2c76e, Summit #5b8def, Forge #d4534a, Muse #4a9c6d). Web src/lib/coach/coach-definitions.ts uses a Tailwind palette (Sage #FBBF24, Summit #3B82F6, Forge #EF4444, Muse #10B981). Forge's identity is also wrong on mobile ("Resilience coach" vs web's "Discipline & physical performance / Health & fitness"). I want you to flag both in your Sprint 1 plan and ask which option:
+
+(a) Update mobile colors AND identity to match web exactly
+(b) Keep mobile brand-palette colors but fix Forge identity to match web
+I will answer before you start Sprint 1.
+
+Decision 2 — Year tab in Planner. Web Planner has 3 tabs (Day / Week / Year), where Year renders the Life Architecture flow. Mobile separates Life Architecture into a drawer-only screen. Options:
+
+(a) Add a third "Year" pill in mobile Planner header that routes into the existing Life Architecture screen
+(b) Keep Life Architecture drawer-only and don't add the Year tab
+Default to (a) for parity; confirm in your plan.
+
+Decision 3 — Meditation Pro gating. Web gates ai_meditation (Generate Session) and meditation_metrics (Pre/Post check-in) and ambient_sounds behind Pro. Mobile currently doesn't gate anything. Confirm in your plan that you'll add usePlan/canAccess checks matching the web's src/lib/plan/access.ts PRO_FEATURES list exactly: ai_coaching, ai_meditation, life_architecture_edit, unlimited_journal, meditation_metrics, ambient_sounds, cross_coach_reference.
+
+SPRINT 1 — Unblock store submission (this week)
+These are the items that, if not fixed, will cause the Play Store submission to bounce or the QA on Fold 7 to look broken. Do these first. Stop and check in after the Sprint 1 production EAS build.
+S1.1 — Fix Preview Mode across all data screens
+Problem: contexts/AuthContext.tsx devBypass() creates a fake session with access_token: "dev-bypass". lib/api.ts apiFetch() throws PreviewAuthError for that token. Only app/trends.tsx, app/growth-library.tsx, app/settings.tsx import isPreviewAuthError. The 6 other data screens render generic error UI instead of a clean empty state.
+Action:
+
+Create artifacts/mobile/components/PreviewEmptyState.tsx — a reusable component that takes a screenName prop and renders: muted icon, "Preview mode" headline, "Sign in to see your real data" body, and a primary "Sign in with Google" button that calls useAuth().signOut() (which clears the dev session and returns to login). Match the visual style of components/ErrorFallback.tsx.
+Wrap React Query error handling in these 6 screens (and any nested query hooks they use) with if (query.error && isPreviewAuthError(query.error)) return <PreviewEmptyState screenName="Today" />;
+
+app/(tabs)/index.tsx
+app/(tabs)/planner.tsx
+app/(tabs)/journal.tsx
+app/(tabs)/meditation.tsx
+app/sage.tsx
+app/life-architecture.tsx
+app/journal-entry.tsx
+
+
+The Today, Planner, and Meditation screens have multiple queries running on the same screen — show the PreviewEmptyState as soon as any query throws PreviewAuthError (don't wait for all to fail).
+
+Acceptance: Tap Preview Mode on login. Navigate to all 9 tabs. Every screen shows a clean PreviewEmptyState card. No red error UI. No console errors.
+S1.2 — Add Privacy link to Login screen
+Problem: Mobile app/settings.tsx already has Privacy Policy wired via Linking.openURL(PRIVACY_URL). app/login.tsx does not. Play Store reviewers and Apple TestFlight reviewers check pre-auth screens too.
+Action: Below the "Preview Mode" button in app/login.tsx, add a small text link "Privacy Policy" that calls Linking.openURL("https://my.everstead.app/privacy"). Use the same muted styling as versionText at the bottom. Single tappable Text component, no button styling.
+Acceptance: On the login screen, "Privacy Policy" link is visible above the version text and opens https://my.everstead.app/privacy in the system browser.
+S1.3 — Fix app.json and run eas init
+Problem:
+
+app.json plugin config has "origin": "https://my.everstead.app" on expo-router. For a standalone Android build, this breaks deep linking because internal navigation gets treated as external URLs on the production web domain.
+app.json has no extra.eas.projectId. EAS Build cannot link this codebase to a project.
+
+Action:
+
+In artifacts/mobile/app.json, remove the "origin" key from the expo-router plugin config. Leave the rest of the plugin config intact.
+Run eas init from artifacts/mobile/. This will add extra.eas.projectId to app.json. Commit the result.
+Verify app.json Android package remains app.everstead.mobile and iOS bundleIdentifier remains app.everstead.mobile. Do not change either.
+Do not disable newArchEnabled or reactCompiler yet — we'll surface any issues with these in the Sprint 1 production build and fix only if they break.
+
+Acceptance: eas build:configure and eas build --profile production --platform android --no-wait both succeed at the validation step (job submission is OK even if build takes 30 min).
+S1.4 — Fix eas.json submit placeholders
+Problem: artifacts/mobile/eas.json submit.production.ios has literal placeholder values your-apple-id@example.com, ascAppId: "0000000000", appleTeamId: "ABCDE12345". Also no Google Play service account config.
+Action:
+
+Ask me in chat for: my real Apple ID email, my App Store Connect App ID (ascAppId), and my Apple Team ID. Replace the placeholders.
+Add submit.production.android.serviceAccountKeyPath: "./google-play-service-account.json" and submit.production.android.track: "internal" (start on internal testing track, not production).
+Add google-play-service-account.json to .gitignore if not already there. Ask me to generate the service account in Play Console → Setup → API access and put the JSON at artifacts/mobile/google-play-service-account.json.
+
+Acceptance: eas submit --platform ios --profile production and eas submit --platform android --profile production both reach credential validation step without placeholder errors.
+S1.5 — Fix SageOrb / Journal FAB collision
+Problem: components/SageOrb.tsx sits at bottom: tabBarHeight + 16 ≈ 66 + insets.bottom, height 52, right: 20. app/(tabs)/journal.tsx FAB sits at bottom: insets.bottom + 96, height 60, right: 22. ~22px vertical overlap at the right edge.
+Action: In app/_layout.tsx, use usePathname() from expo-router to determine current route. When the route starts with /journal (the journal list tab) OR the route is /journal-entry (the editor), hide the SageOrb. Pattern:
+tsconst pathname = usePathname();
+const hideOrb = pathname?.startsWith('/journal') ?? false;
+// then: {showOrb && !hideOrb && <SageOrb />}
+Do not also hide it on /sage (it already auto-hides when on the Sage screen via showOrb check — verify and preserve that).
+Acceptance: On Journal list tab and inside Journal entry editor, SageOrb is not visible. On Today / Planner / Meditation / Life Architecture / Trends / Growth Library / Settings tabs, SageOrb is visible at the same position as before.
+S1.6 — Fix Coach colors and Forge identity
+Problem: artifacts/mobile/lib/coach.ts:
+
+Forge title is "Resilience coach" and description is about pressure/grit. Web (src/lib/coach/coach-definitions.ts) says "Discipline & physical performance" / shortDescription "Health & fitness" / description "Fitness, habits, pushing past comfort zones." This is wrong identity, not just wrong colors.
+4 of 5 coach colors differ from web. See Decision 1 above.
+
+Action — depending on my answer to Decision 1:
+
+If (a) full web parity: replace the entire COACHES object in artifacts/mobile/lib/coach.ts with the web's exact values from src/lib/coach/coach-definitions.ts — id, name, title, shortDescription, description, color, gradientFrom, gradientTo for all five coaches. Also add the domains array (the web has it; mobile currently doesn't).
+If (b) brand palette + correct identity: keep the mobile color values (#f2c76e, #5b8def, #8B5CF6, #d4534a, #4a9c6d) but replace title, shortDescription, description for Forge specifically with the web's values. Keep Sage/Summit/Zen/Muse title/desc as-is if they currently match web semantic intent.
+
+Acceptance: Sage screen, when Forge is selected, shows title "Discipline & physical performance" (or the correct web value) and the description matches web.
+S1.7 — Production EAS build + QA on Fold 7
+After S1.1–S1.6 are done, run eas build --profile production --platform android. When the AAB is ready, I will sideload it on my Samsung Galaxy Fold 7 and walk every screen. Surface any issues you see in the build logs. Do not start Sprint 2 until I confirm S1 is good on real hardware.
+
+SPRINT 2 — Today page + Planner + Onboarding (week 2)
+Stop here. Do not plan Sprint 2 in detail yet. After Sprint 1 ships, I'll ask you to produce the Sprint 2 plan. For now, here's the scope so you know what's coming:
+
+S2.1: Port Onboarding flow (12 steps) from src/components/onboarding/ — no mobile onboarding exists today, new users hit a context-less Today page
+S2.2: Today page rebuild — DailyBriefingGreeting (with /api/coach/daily-content), DailySongCard, YourFocusSection 3-card grid (Weekly Goals + Today's Plan + Healthset), OnboardingResumeCard, +Pages quick action
+S2.3: Planner Day View — add Went Well section, AI-suggest button on Gratitude (/api/coach/suggest with type: gratitude-prompt), after-5pm green highlight on Went Well, Healthset "Coming Soon" placeholder card
+S2.4: Planner Week View — restructure as 4 tabs (Blueprint / Weekly Story / Past Week Exceptionals / Weekly Review), add reflection-time gating (Sat/Sun OR async-stored early-unlock flag), port PastWeekExceptionalsView, port WeeklyFlowIndicator
+S2.5: Planner Year tab → Life Architecture (per Decision 2)
+
+SPRINT 3 — Meditation + Journal (week 3)
+
+S3.1: Meditation Generate Session dialog → /api/meditation/generate, behind ai_meditation gate
+S3.2: Meditation Pre-session check-in (tension/stress sliders) before timer
+S3.3: Meditation Post-session review (5-step sheet matching web's PostSessionReview.tsx)
+S3.4: Daily Mindfulness check-in card at top of meditation tab, /api/meditation/daily-checkin
+S3.5: Journal — port TemplatePicker and JOURNAL_TEMPLATES from web, show before editor mounts
+S3.6: Journal — AI prompt card (/api/journal/prompt) behind ai_coaching gate
+S3.7: Journal — Voice recording via expo-av (already in deps) → POST audio to /api/journal/[id]/audio-transcribe
+S3.8: Journal — Media (photo) attachments via expo-image-picker (already in deps) → POST to /api/journal/[id]/media
+S3.9: Journal — PDF export via expo-print + expo-sharing
+
+SPRINT 4 — Sage + Feature Gating + Pre-Submission (week 4)
+
+S4.1: Sage — CoachIntroFlow port (first-launch coach team intro, AsyncStorage flag)
+S4.2: Sage — CoachActionBadge rendering inline with messages (when stream sends chunk.action)
+S4.3: Sage — CoachSettingsPanel (proactivity slider + 5 data-access toggles) wired to /api/coach/settings
+S4.4: Root _layout.tsx — mount NudgeToast component that polls /api/coach/nudge?page={currentRoute} after 3s delay per route change
+S4.5: Create hooks/usePlan.ts (port from web), components/UpgradePrompt.tsx (port from web), components/TrialNudges.tsx (port from web)
+S4.6: Gate all 7 Pro features matching web PRO_FEATURES list; intercept 402 responses in apiFetch and surface UpgradePrompt modal
+S4.7: Mount TrialNudges at root in _layout.tsx (welcome modal day 0, toast day 7, banner day 12-13, expiry modal post-trial)
+S4.8: Final production EAS build + full Fold 7 QA + Play Store internal testing track submission
+
+
+🛡️ Guardrails for every sprint
+
+Do not modify the web app. All work is in artifacts/mobile/.
+Do not change lib/api.ts apiFetch core behavior — only add new API methods. Preserve PreviewAuthError throwing on dev-bypass token.
+Do not introduce new architectural patterns. Use React Query for fetching, the existing contexts/ pattern for shared state, RN StyleSheet, no NativeWind, no Zustand.
+Do not add new top-level dependencies without asking first. Anything you need beyond what's already in package.json requires confirmation.
+Do not bypass feature gating server-side. When you add usePlan().canAccess(feature) checks, those mirror the server-side canAccess in web; do not weaken either.
+Do not store anything sensitive in AsyncStorage. Use expo-secure-store for tokens/auth-adjacent values.
+Do not commit google-play-service-account.json or any private keys.
+Do not leave console.log calls in production code. Use if (__DEV__) console.log(...) if you must.
+Do not skip TypeScript types. No any without an inline comment explaining why.
+Match existing mobile aesthetic — Colors from constants/colors.ts, Feather icons, the warm gold + dark brown + cream palette. Web uses oklch Tailwind tokens; do not bring those to mobile.
+
+
+✅ Now — produce the Sprint 1 plan
+In your next message, do only this:
+
+Confirm you've read all the files listed under "Critical reading" above.
+Answer my three decisions or ask me to answer them.
+List each of S1.1 through S1.7 with: (a) the specific files you'll modify/create, (b) the exact behavior change in one or two sentences, (c) any new dependencies, (d) an acceptance test I can run on the Fold 7.
+Estimate elapsed time per task.
+Do not write code yet. Wait for my approval.
+
+Once I approve Sprint 1, execute it task-by-task in order, committing each task as a separate commit with a message like mobile: S1.1 wire PreviewEmptyState across data screens. Push when Sprint 1 is fully done and ready for the production EAS build.
