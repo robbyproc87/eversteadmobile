@@ -19,10 +19,12 @@ import Colors from "@/constants/colors";
 import { useDrawer } from "@/contexts/DrawerContext";
 import { useToast } from "@/contexts/ToastContext";
 import { MenuIcon } from "@/components/MenuIcon";
+import { PreviewEmptyState } from "@/components/PreviewEmptyState";
 import {
   api,
   ApiError,
   getMoodOption,
+  isPreviewAuthError,
   type JournalEntry,
 } from "@/lib/api";
 
@@ -146,8 +148,10 @@ export default function JournalScreen() {
     retry: 1,
   });
 
+  const isPreview = isPreviewAuthError(entriesQuery.error);
+
   useEffect(() => {
-    if (entriesQuery.error) {
+    if (entriesQuery.error && !isPreviewAuthError(entriesQuery.error)) {
       const msg =
         entriesQuery.error instanceof ApiError
           ? entriesQuery.error.message
@@ -182,6 +186,14 @@ export default function JournalScreen() {
     ),
     [onOpen],
   );
+
+  if (isPreview) {
+    return (
+      <View style={[styles.container, { paddingTop: insets.top + webTopInset }]}>
+        <PreviewEmptyState screenName="Journal" />
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + webTopInset }]}>

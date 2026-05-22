@@ -20,10 +20,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDrawer } from "@/contexts/DrawerContext";
 import { useToast } from "@/contexts/ToastContext";
 import Colors from "@/constants/colors";
-import { api } from "@/lib/api";
+import { api, isPreviewAuthError } from "@/lib/api";
 import type { GeneratedMeditation, MeditationSession } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { MenuIcon } from "@/components/MenuIcon";
+import { PreviewEmptyState } from "@/components/PreviewEmptyState";
 
 type FeatherIconName = React.ComponentProps<typeof Feather>["name"];
 
@@ -381,6 +382,18 @@ export default function MeditationScreen() {
 
   const sessions: MeditationSession[] = sessionsQuery.data ?? [];
   const generated: GeneratedMeditation[] = generatedQuery.data ?? [];
+
+  const isPreview =
+    isPreviewAuthError(sessionsQuery.error) ||
+    isPreviewAuthError(generatedQuery.error);
+
+  if (isPreview) {
+    return (
+      <View style={[styles.container, { paddingTop: insets.top + webTopInset }]}>
+        <PreviewEmptyState screenName="Meditation" />
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + webTopInset }]}>

@@ -13,6 +13,7 @@ import {
 } from "react-native";
 
 import { AuthGuard } from "@/components/AuthGuard";
+import { PreviewEmptyState } from "@/components/PreviewEmptyState";
 import { ArchitectureVisual } from "@/components/life-architecture/ArchitectureVisual";
 import { BreakInterstitial } from "@/components/life-architecture/BreakInterstitial";
 import { SectionCard } from "@/components/life-architecture/SectionCard";
@@ -22,6 +23,7 @@ import {
   ApiError,
   EMPTY_LIFE_ARCHITECTURE,
   api,
+  isPreviewAuthError,
   lifeArchitectureApi,
   type BillingStatus,
   type LifeArchitectureData,
@@ -90,6 +92,17 @@ export default function LifeArchitectureScreen() {
       return failureCount < 1;
     },
   });
+
+  if (
+    isPreviewAuthError(billingQuery.error) ||
+    isPreviewAuthError(snapshotQuery.error)
+  ) {
+    return (
+      <AuthGuard>
+        <PreviewEmptyState screenName="Life Architecture" />
+      </AuthGuard>
+    );
+  }
 
   if (billingQuery.isLoading) {
     return (

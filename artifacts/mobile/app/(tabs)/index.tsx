@@ -18,9 +18,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDrawer } from "@/contexts/DrawerContext";
 import Colors from "@/constants/colors";
-import { api } from "@/lib/api";
+import { api, isPreviewAuthError } from "@/lib/api";
 import type { ActivityItem } from "@/lib/api";
 import { MenuIcon } from "@/components/MenuIcon";
+import { PreviewEmptyState } from "@/components/PreviewEmptyState";
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -168,6 +169,19 @@ export default function TodayScreen() {
     user?.user_metadata?.full_name?.split(" ")[0] ||
     user?.email?.split("@")[0] ||
     "";
+
+  const isPreview =
+    isPreviewAuthError(statsQuery.error) ||
+    isPreviewAuthError(activityQuery.error) ||
+    isPreviewAuthError(todayQuery.error);
+
+  if (isPreview) {
+    return (
+      <View style={[styles.container, { paddingTop: insets.top + webTopInset }]}>
+        <PreviewEmptyState screenName="Today" />
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + webTopInset }]}>

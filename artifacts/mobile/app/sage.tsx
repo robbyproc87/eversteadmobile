@@ -25,6 +25,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AuthGuard } from "@/components/AuthGuard";
+import { PreviewEmptyState } from "@/components/PreviewEmptyState";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
@@ -36,6 +37,7 @@ import {
 } from "@/lib/coach";
 import {
   coachApi,
+  isPreviewAuthError,
   type CoachChatMessage,
   type CoachConversationDetail,
   type CoachConversationListItem,
@@ -243,20 +245,25 @@ export default function SageScreen() {
 
   const activeCoach = getCoach(activeCoachId);
 
-  const { data: conversations = [], isLoading: convLoading } = useQuery<
-    CoachConversationListItem[]
-  >({
+  const conversationsQuery = useQuery<CoachConversationListItem[]>({
     queryKey: ["coach", "conversations"],
     queryFn: () => coachApi.listConversations(),
     enabled: !!session,
   });
+  const conversations = conversationsQuery.data ?? [];
+  const convLoading = conversationsQuery.isLoading;
 
-  const { data: activeConversation, isLoading: msgLoading } =
-    useQuery<CoachConversationDetail>({
-      queryKey: ["coach", "conversation", activeConvId],
-      queryFn: () => coachApi.getConversation(activeConvId!),
-      enabled: !!activeConvId,
-    });
+  const activeConversationQuery = useQuery<CoachConversationDetail>({
+    queryKey: ["coach", "conversation", activeConvId],
+    queryFn: () => coachApi.getConversation(activeConvId!),
+    enabled: !!activeConvId,
+  });
+  const activeConversation = activeConversationQuery.data;
+  const msgLoading = activeConversationQuery.isLoading;
+
+  const isPreviewError =
+    isPreviewAuthError(conversationsQuery.error) ||
+    isPreviewAuthError(activeConversationQuery.error);
 
   // Resolve the active conversation per coach whenever the coach changes.
   useEffect(() => {
@@ -486,6 +493,24 @@ export default function SageScreen() {
     }, 50);
     return () => clearTimeout(t);
   }, [displayedMessages.length, streamingContent, isThinking, isSending]);
+
+  if (isPreviewError) {
+    return (
+      <AuthGuard>
+        <View
+          style={[
+            styles.container,
+            {
+              paddingTop: Platform.OS === "web" ? webTopInset : 0,
+              paddingBottom: insets.bottom,
+            },
+          ]}
+        >
+          <PreviewEmptyState screenName="Sage" />
+        </View>
+      </AuthGuard>
+    );
+  }
 
   return (
     <AuthGuard>

@@ -21,7 +21,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDrawer } from "@/contexts/DrawerContext";
 import { useToast } from "@/contexts/ToastContext";
 import Colors from "@/constants/colors";
-import { api } from "@/lib/api";
+import { api, isPreviewAuthError } from "@/lib/api";
+import { PreviewEmptyState } from "@/components/PreviewEmptyState";
 import type {
   CalendarEvent,
   DailyPlanData,
@@ -1335,16 +1336,25 @@ export default function PlannerScreen() {
   const eventsError = eventsQuery.error;
   const nudgeError = nudgeQuery.error;
 
+  const isPreview =
+    isPreviewAuthError(dailyError) ||
+    isPreviewAuthError(blueprintQuery.error) ||
+    isPreviewAuthError(eventsError) ||
+    isPreviewAuthError(nudgeError);
+
   useEffect(() => {
-    if (dailyError) showError(formatLoadError("today's plan", dailyError));
+    if (dailyError && !isPreviewAuthError(dailyError))
+      showError(formatLoadError("today's plan", dailyError));
   }, [dailyError, showError]);
 
   useEffect(() => {
-    if (eventsError) showError(formatLoadError("calendar events", eventsError));
+    if (eventsError && !isPreviewAuthError(eventsError))
+      showError(formatLoadError("calendar events", eventsError));
   }, [eventsError, showError]);
 
   useEffect(() => {
-    if (nudgeError) showError(formatLoadError("Sage's nudge", nudgeError));
+    if (nudgeError && !isPreviewAuthError(nudgeError))
+      showError(formatLoadError("Sage's nudge", nudgeError));
   }, [nudgeError, showError]);
 
   const invalidatePlan = useCallback(() => {
@@ -1408,6 +1418,14 @@ export default function PlannerScreen() {
   }, []);
 
   const navAtToday = view === "week" ? viewingThisWeek : viewingToday;
+
+  if (isPreview) {
+    return (
+      <View style={[styles.container, { paddingTop: insets.top + webTopInset }]}>
+        <PreviewEmptyState screenName="Planner" />
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + webTopInset }]}>

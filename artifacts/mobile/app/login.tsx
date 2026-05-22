@@ -1,8 +1,10 @@
 import { Feather } from "@expo/vector-icons";
 import { Redirect } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
+  Linking,
   Platform,
   Pressable,
   StyleSheet,
@@ -109,6 +111,26 @@ export default function LoginScreen() {
             <Feather name="eye" size={22} color={Colors.dark} />
             <Text style={styles.previewButtonText}>Preview Mode</Text>
           </Pressable>
+          <Pressable
+            accessibilityRole="link"
+            accessibilityLabel="Open privacy policy"
+            onPress={async () => {
+              const url = "https://my.everstead.app/privacy";
+              try {
+                if (Platform.OS === "web") {
+                  await Linking.openURL(url);
+                } else {
+                  await WebBrowser.openBrowserAsync(url);
+                }
+              } catch {
+                Linking.openURL(url).catch(() => {});
+              }
+            }}
+            hitSlop={8}
+            style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+          >
+            <Text style={styles.privacyLink}>Privacy Policy</Text>
+          </Pressable>
         </View>
         <Text style={styles.versionText}>v1.2 — Apr 12</Text>
       </View>
@@ -211,5 +233,13 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     textAlign: "center",
     marginTop: 8,
+  },
+  privacyLink: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    color: Colors.textSecondary,
+    textAlign: "center",
+    textDecorationLine: "underline",
+    marginTop: 4,
   },
 });

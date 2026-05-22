@@ -29,11 +29,13 @@ import {
   api,
   ApiError,
   getMoodOption,
+  isPreviewAuthError,
   MOOD_OPTIONS,
   type InkStrokeData,
   type JournalEntry,
   type JournalEntryInput,
 } from "@/lib/api";
+import { PreviewEmptyState } from "@/components/PreviewEmptyState";
 import {
   InkPad,
   type InkPadHandles,
@@ -442,8 +444,10 @@ export default function JournalEntryScreen() {
     setCanRedo(r);
   }, []);
 
+  const isPreview = isPreviewAuthError(entryQuery.error);
+
   useEffect(() => {
-    if (entryQuery.error) {
+    if (entryQuery.error && !isPreviewAuthError(entryQuery.error)) {
       const msg =
         entryQuery.error instanceof ApiError
           ? entryQuery.error.message
@@ -660,6 +664,17 @@ export default function JournalEntryScreen() {
     if (router.canGoBack()) router.back();
     else router.replace("/(tabs)/journal");
   }, [mode, isNew, router]);
+
+  if (isPreview) {
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.container}>
+          <PreviewEmptyState screenName="Journal" />
+        </View>
+      </>
+    );
+  }
 
   return (
     <>
