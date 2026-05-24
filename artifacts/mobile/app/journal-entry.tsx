@@ -42,6 +42,8 @@ import {
   type InkStroke,
   type ToolKind,
 } from "@/components/journal/InkPad";
+import TemplatePicker from "@/components/journal/TemplatePicker";
+import { type JournalTemplate } from "@/lib/journal-templates";
 
 type EditorMode = "type" | "write";
 
@@ -394,6 +396,9 @@ export default function JournalEntryScreen() {
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [templateId, setTemplateId] = useState<string | null>(null);
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const [isLoadingPrompt, setIsLoadingPrompt] = useState(false);
   const inkPadRef = useRef<InkPadHandles>(null);
   const initializedRef = useRef(false);
 
@@ -401,8 +406,37 @@ export default function JournalEntryScreen() {
     if (isNew && !initializedRef.current) {
       initializedRef.current = true;
       setMode("edit");
+      setTemplatePickerOpen(true);
     }
   }, [isNew]);
+
+  const handleSelectTemplate = useCallback((tpl: JournalTemplate) => {
+    setTemplateId(tpl.id);
+    if (tpl.id !== "blank") {
+      setTitle((prev) => (prev.trim().length === 0 && tpl.prefillTitle ? tpl.prefillTitle : prev));
+      setBody((prev) => (prev.trim().length === 0 && tpl.prefillBody ? tpl.prefillBody : prev));
+    }
+    setTemplatePickerOpen(false);
+  }, []);
+
+  const handleAiPrompt = useCallback(async () => {
+    if (isLoadingPrompt) return;
+    try {
+      setIsLoadingPrompt(true);
+      haptic();
+      const { prompt } = await api.getJournalPrompt({ mood, templateId });
+      setBody((prev) => {
+        const trimmed = prev.trimEnd();
+        const sep = trimmed.length > 0 ? "\n\n" : "";
+        return `${trimmed}${sep}${prompt}\n\n`;
+      });
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Couldn't get a prompt.";
+      showError(msg);
+    } finally {
+      setIsLoadingPrompt(false);
+    }
+  }, [isLoadingPrompt, mood, templateId, showError]);
 
   useEffect(() => {
     if (!entry || initializedRef.current) return;
@@ -411,6 +445,7 @@ export default function JournalEntryScreen() {
     setBody(entry.contentPlainText ?? entry.content ?? "");
     setMood(entry.mood ?? null);
     setTags(entry.tags ?? []);
+    setTemplateId(entry.templateId ?? null);
     const loaded =
       entry.canvasData && Array.isArray(entry.canvasData)
         ? (entry.canvasData as InkStroke[][])
@@ -471,6 +506,7 @@ export default function JournalEntryScreen() {
       mood: mood,
       tags: tags,
       isPrivate: entry?.isPrivate ?? false,
+      templateId: templateId,
     };
     if (hasCanvasContent) {
       payload.canvasData = canvasPages;
@@ -481,7 +517,7 @@ export default function JournalEntryScreen() {
       payload.pageCount = canvasPages.length;
     }
     return payload;
-  }, [title, body, mood, tags, entry?.isPrivate, hasCanvasContent, canvasPages, initialCanvas]);
+  }, [title, body, mood, tags, templateId, entry?.isPrivate, hasCanvasContent, canvasPages, initialCanvas]);
 
   const runTranscription = useCallback(
     async (entryId: string) => {
@@ -855,7 +891,28 @@ export default function JournalEntryScreen() {
                 <Text style={styles.sectionLabel}>Tags</Text>
                 <TagEditor tags={tags} onChange={setTags} />
 
-                <Text style={styles.sectionLabel}>Your thoughts</Text>
+                <View style={styles.thoughtsHeader}>
+                  <Text style={styles.sectionLabel}>Your thoughts</Text>
+                  <Pressable
+                    onPress={handleAiPrompt}
+                    disabled={isLoadingPrompt}
+                    style={({ pressed }) => [
+                      styles.aiPromptChip,
+                      isLoadingPrompt && { opacity: 0.6 },
+                      pressed && !isLoadingPrompt && { opacity: 0.85 },
+                    ]}
+                    hitSlop={6}
+                  >
+                    {isLoadingPrompt ? (
+                      <ActivityIndicator size="small" color={Colors.goldDark} />
+                    ) : (
+                      <Feather name="zap" size={12} color={Colors.goldDark} />
+                    )}
+                    <Text style={styles.aiPromptChipText}>
+                      {isLoadingPrompt ? "Thinking…" : "Get a prompt"}
+                    </Text>
+                  </Pressable>
+                </View>
                 <TextInput
                   value={body}
                   onChangeText={setBody}
@@ -1031,6 +1088,11 @@ export default function JournalEntryScreen() {
           </View>
         )}
       </KeyboardAvoidingView>
+      <TemplatePicker
+        visible={templatePickerOpen}
+        onClose={() => setTemplatePickerOpen(false)}
+        onSelect={handleSelectTemplate}
+      />
     </>
   );
 }
@@ -1267,6 +1329,28 @@ const styles = StyleSheet.create({
     color: Colors.dark,
     paddingVertical: 6,
     paddingHorizontal: 4,
+  },
+  thoughtsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 12,
+  },
+  aiPromptChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: Colors.goldLight,
+    borderWidth: 1,
+    borderColor: Colors.gold,
+  },
+  aiPromptChipText: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    color: Colors.goldDark,
   },
   bodyInput: {
     minHeight: 240,

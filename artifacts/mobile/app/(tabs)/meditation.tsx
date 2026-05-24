@@ -22,6 +22,8 @@ import { useToast } from "@/contexts/ToastContext";
 import Colors from "@/constants/colors";
 import { api, isPreviewAuthError } from "@/lib/api";
 import type { GeneratedMeditation, MeditationSession } from "@/lib/api";
+import DailyMindfulnessCheckin from "@/components/meditation/DailyMindfulnessCheckin";
+import GenerateSessionDialog from "@/components/meditation/GenerateSessionDialog";
 import { supabase } from "@/lib/supabase";
 import { MenuIcon } from "@/components/MenuIcon";
 import { PreviewEmptyState } from "@/components/PreviewEmptyState";
@@ -93,6 +95,7 @@ export default function MeditationScreen() {
   const ambientSoundRef = useRef<Audio.Sound | null>(null);
   const ambientTokenRef = useRef(0);
 
+  const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const [showRatingPrompt, setShowRatingPrompt] = useState(false);
   const [pendingDurationS, setPendingDurationS] = useState(0);
   const [ratingForSession, setRatingForSession] = useState<{
@@ -430,6 +433,7 @@ export default function MeditationScreen() {
           />
         }
       >
+        <DailyMindfulnessCheckin />
         {/* Quick Start Card */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
@@ -630,14 +634,30 @@ export default function MeditationScreen() {
                 <Text style={styles.countBadgeText}>{generated.length}</Text>
               </View>
             )}
+            <View style={{ flex: 1 }} />
+            <Pressable
+              onPress={() => {
+                if (Platform.OS !== "web") {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }
+                setGenerateDialogOpen(true);
+              }}
+              style={({ pressed }) => [
+                styles.generateBtn,
+                pressed && { opacity: 0.85 },
+              ]}
+              hitSlop={6}
+            >
+              <Feather name="zap" size={13} color={Colors.dark} />
+              <Text style={styles.generateBtnText}>Generate</Text>
+            </Pressable>
           </View>
 
           {generatedQuery.isLoading ? (
             <ActivityIndicator color={Colors.gold} style={{ marginVertical: 16 }} />
           ) : generated.length === 0 ? (
             <Text style={styles.emptyInline}>
-              No generated meditations yet. Generate one on the web app to listen
-              here.
+              No generated meditations yet. Tap Generate to create your first one.
             </Text>
           ) : (
             <View style={{ gap: 8 }}>
@@ -748,6 +768,11 @@ export default function MeditationScreen() {
           )}
         </View>
       </ScrollView>
+
+      <GenerateSessionDialog
+        visible={generateDialogOpen}
+        onClose={() => setGenerateDialogOpen(false)}
+      />
 
       {/* Post-session rating modal */}
       <Modal
@@ -874,6 +899,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: "Inter_600SemiBold",
     color: Colors.goldDark,
+  },
+  generateBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: Colors.gold,
+  },
+  generateBtnText: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    color: Colors.dark,
   },
   presetRow: {
     flexDirection: "row",

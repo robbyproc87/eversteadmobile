@@ -509,6 +509,83 @@ export const api = {
       quote?: { text: string; author: string } | null;
       song?: { title: string; artist: string; reason: string } | null;
     }>("/daily-content"),
+
+  generateMeditation: (input: { meditationType: string; durationS: number; voice?: string }) =>
+    apiFetch<GeneratedMeditationDetail>("/meditation/generate", {
+      method: "POST",
+      body: JSON.stringify({ voice: "nova", ...input }),
+    }),
+
+  updateMeditationSession: (
+    id: string,
+    metrics: {
+      rating?: number;
+      attentionQuality?: number;
+      mindWanderingCount?: number;
+      emotionalTurbulence?: number;
+      reactivity?: number;
+      tensionAfter?: number;
+      stressAfter?: number;
+      insightText?: string;
+      insightScore?: number;
+    },
+  ) =>
+    apiFetch<MeditationSession>("/meditation/sessions", {
+      method: "PATCH",
+      body: JSON.stringify({ id, ...metrics }),
+    }),
+
+  getDailyMindfulnessCheckin: () =>
+    apiFetch<{
+      id?: string;
+      awarenessRating?: number;
+      wellbeingRating?: number;
+      date?: string;
+    } | null>("/meditation/daily-checkin"),
+
+  saveDailyMindfulnessCheckin: (input: { awarenessRating: number; wellbeingRating: number }) =>
+    apiFetch<{ id: string; awarenessRating: number; wellbeingRating: number; date: string }>(
+      "/meditation/daily-checkin",
+      { method: "POST", body: JSON.stringify(input) },
+    ),
+
+  getJournalPrompt: (context?: { mood?: string | null; templateId?: string | null }) =>
+    apiFetch<{ prompt: string }>("/journal/prompt", {
+      method: "POST",
+      body: JSON.stringify(context || {}),
+    }),
+
+  requestJournalMediaUpload: (entryId: string, mime: string) =>
+    apiFetch<{ path: string; token: string; signedUrl: string }>(
+      `/journal/${encodeURIComponent(entryId)}/media?action=upload`,
+      { method: "POST", body: JSON.stringify({ mime }) },
+    ),
+
+  confirmJournalMedia: (
+    entryId: string,
+    input: { path: string; mime: string; width?: number; height?: number; bytes: number },
+  ) =>
+    apiFetch<{ id: string; path: string; mime: string }>(
+      `/journal/${encodeURIComponent(entryId)}/media?action=confirm`,
+      { method: "POST", body: JSON.stringify(input) },
+    ),
+
+  listJournalEntryMedia: (entryId: string) =>
+    apiFetch<Array<{ id: string; path: string; mime: string; signedUrl?: string }>>(
+      `/journal/${encodeURIComponent(entryId)}/media`,
+    ),
+
+  listAllJournalMedia: (cursor?: string) =>
+    apiFetch<{
+      items: Array<{ id: string; entryId: string; path: string; mime: string; signedUrl?: string; createdAt: string }>;
+      nextCursor?: string | null;
+    }>(`/journal/media${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`),
+
+  transcribeJournalAudio: (entryId: string, mediaId: string) =>
+    apiFetch<{ text: string; status: "complete" | "failed" | "pending" }>(
+      `/journal/${encodeURIComponent(entryId)}/audio-transcribe`,
+      { method: "POST", body: JSON.stringify({ mediaId }) },
+    ),
 };
 
 export interface MeditationSession {
