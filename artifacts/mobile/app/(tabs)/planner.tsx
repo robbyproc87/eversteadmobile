@@ -235,16 +235,53 @@ function PrioritiesSection({ dailyPlanId, initial, onSaved }: PrioritiesProps) {
 interface GratitudesProps {
   dailyPlanId?: string;
   initial: Array<{ id?: string; ordinal: number; text: string }>;
+  focus?: string;
+  dateString: string;
   onSaved: () => void;
 }
 
-function GratitudesSection({ dailyPlanId, initial, onSaved }: GratitudesProps) {
+function GratitudesSection({
+  dailyPlanId,
+  initial,
+  focus,
+  dateString,
+  onSaved,
+}: GratitudesProps) {
   const MIN_SLOTS = 3;
   const MAX = 6;
   const { showError } = useToast();
   const [items, setItems] = useState(initial);
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState(false);
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  const [suggestion, setSuggestion] = useState<string | null>(null);
+
+  const handleSuggest = async () => {
+    if (suggestLoading) return;
+    setSuggestLoading(true);
+    haptic();
+    try {
+      const res = await api.suggestGratitude({ focus, date: dateString });
+      const text =
+        (typeof res?.suggestion === "string" && res.suggestion) ||
+        (Array.isArray(res?.suggestions) && res.suggestions[0]) ||
+        (typeof res?.text === "string" && res.text) ||
+        "";
+      if (text) setSuggestion(text);
+      else showError("Sage couldn't suggest a gratitude right now.");
+    } catch (e) {
+      showError(formatLoadError("a gratitude suggestion", e));
+    } finally {
+      setSuggestLoading(false);
+    }
+  };
+
+  const useSuggestion = () => {
+    if (!suggestion) return;
+    const nextSlot = items.length;
+    setDrafts((prev) => ({ ...prev, [nextSlot]: suggestion }));
+    setSuggestion(null);
+  };
 
   useEffect(() => {
     setItems(initial);
@@ -301,8 +338,54 @@ function GratitudesSection({ dailyPlanId, initial, onSaved }: GratitudesProps) {
     <View style={styles.card}>
       <View style={styles.sectionHeaderRow}>
         <SectionHeader icon="heart" title="Gratitude" />
-        {saving ? <ActivityIndicator size="small" color={Colors.gold} /> : null}
+        <View style={styles.gratitudeHeaderRight}>
+          {saving ? (
+            <ActivityIndicator size="small" color={Colors.gold} />
+          ) : null}
+          <Pressable
+            onPress={handleSuggest}
+            disabled={suggestLoading || !dailyPlanId}
+            style={({ pressed }) => [
+              styles.suggestBtn,
+              (suggestLoading || !dailyPlanId) && { opacity: 0.5 },
+              pressed && { opacity: 0.7 },
+            ]}
+            hitSlop={6}
+            testID="gratitude-suggest-btn"
+          >
+            {suggestLoading ? (
+              <ActivityIndicator size="small" color={Colors.goldDark} />
+            ) : (
+              <Feather name="zap" size={14} color={Colors.goldDark} />
+            )}
+            <Text style={styles.suggestBtnText}>Suggest</Text>
+          </Pressable>
+        </View>
       </View>
+
+      {suggestion ? (
+        <View style={styles.suggestionBox}>
+          <Feather name="zap" size={12} color={Colors.goldDark} />
+          <Text style={styles.suggestionText}>{suggestion}</Text>
+          <Pressable
+            onPress={useSuggestion}
+            style={({ pressed }) => [
+              styles.suggestionUseBtn,
+              pressed && { opacity: 0.7 },
+            ]}
+            hitSlop={4}
+          >
+            <Text style={styles.suggestionUseText}>Use</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setSuggestion(null)}
+            hitSlop={6}
+            style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+          >
+            <Feather name="x" size={14} color={Colors.textSecondary} />
+          </Pressable>
+        </View>
+      ) : null}
 
       {items.map((item, i) => (
         <View key={item.id || `g-${i}`} style={styles.gratitudeRow}>
@@ -343,6 +426,131 @@ function GratitudesSection({ dailyPlanId, initial, onSaved }: GratitudesProps) {
       {items.length >= MAX ? (
         <Text style={styles.maxLabel}>{MAX}/{MAX} gratitudes</Text>
       ) : null}
+    </View>
+  );
+}
+
+interface WentWellSectionProps {
+  dailyPlanId?: string;
+  initial: string[];
+  onSaved: () => void;
+}
+
+function WentWellSection({ dailyPlanId, initial, onSaved }: WentWellSectionProps) {
+  const { showError } = useToast();
+  const [values, setValues] = useState<string[]>(initial);
+  const [savingIdx, setSavingIdx] = useState<number | null>(null);
+  const dirtyRef = React.useRef(false);
+  const initialRef = React.useRef<string[]>(initial);
+  const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    initialRef.current = initial;
+    if (!dirtyRef.current) setValues(initial);
+  }, [initial]);
+
+  useEffect(() => () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+  }, []);
+
+  const persist = useCallback(
+    async (idx: number, snapshot: string[]) => {
+      if (!dailyPlanId) return;
+      setSavingIdx(idx);
+      try {
+        await api.saveWentWells(
+          dailyPlanId,
+          snapshot.map((text, ordinal) => ({ ordinal, text })),
+        );
+        initialRef.current = snapshot;
+        dirtyRef.current = false;
+        onSaved();
+      } catch (e) {
+        setValues(initialRef.current);
+        dirtyRef.current = false;
+        showError(formatSaveError("went well", e));
+      } finally {
+        setSavingIdx(null);
+      }
+    },
+    [dailyPlanId, onSaved, showError],
+  );
+
+  const handleChange = (i: number, t: string) => {
+    dirtyRef.current = true;
+    setValues((prev) => {
+      const next = [...prev];
+      next[i] = t;
+      return next;
+    });
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const snapshot = [...values];
+    snapshot[i] = t;
+    debounceRef.current = setTimeout(() => {
+      if (snapshot[i] !== initialRef.current[i]) persist(i, snapshot);
+    }, 800);
+  };
+
+  const handleBlur = (i: number) => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    if (values[i] === initialRef.current[i]) return;
+    persist(i, [...values]);
+  };
+
+  const isAfterFive = new Date().getHours() >= 17;
+  const cardStyle = [styles.card, isAfterFive && styles.cardEveningGreen];
+
+  return (
+    <View style={cardStyle}>
+      <SectionHeader icon="check-circle" title="Went Well" accent={Colors.success} />
+      {values.map((value, i) => (
+        <View key={i} style={styles.priorityRow}>
+          <View style={[styles.priorityNum, isAfterFive && styles.priorityNumGreen]}>
+            <Text
+              style={[
+                styles.priorityNumText,
+                isAfterFive && styles.priorityNumTextGreen,
+              ]}
+            >
+              {i + 1}
+            </Text>
+          </View>
+          <TextInput
+            style={styles.priorityInput}
+            value={value}
+            placeholder={`What went well #${i + 1}`}
+            placeholderTextColor={Colors.textTertiary}
+            onChangeText={(t) => handleChange(i, t)}
+            onBlur={() => handleBlur(i)}
+            editable={!!dailyPlanId}
+          />
+          {savingIdx === i ? (
+            <ActivityIndicator size="small" color={Colors.success} />
+          ) : null}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function HealthsetPlaceholderCard() {
+  return (
+    <View style={[styles.card, styles.healthsetCard]}>
+      <View style={styles.healthsetHeader}>
+        <View style={[styles.sectionIcon, { backgroundColor: Colors.goldLight }]}>
+          <Feather name="activity" size={14} color={Colors.goldDark} />
+        </View>
+        <Text style={styles.sectionTitle}>Healthset</Text>
+        <View style={styles.healthsetBadge}>
+          <Text style={styles.healthsetBadgeText}>COMING SOON</Text>
+        </View>
+      </View>
+      <Text style={styles.healthsetBody}>
+        Track sleep, energy, and movement to see how your body shapes your day.
+      </Text>
     </View>
   );
 }
@@ -1328,6 +1536,14 @@ export default function PlannerScreen() {
       .map((g) => ({ id: g.id, ordinal: g.ordinal, text: g.text! }));
   }, [dailyPlan]);
 
+  const wentWells = useMemo(() => {
+    const arr = ["", "", ""];
+    (dailyPlan?.wentWells || []).forEach((w) => {
+      if (w.ordinal >= 0 && w.ordinal < 3) arr[w.ordinal] = w.text ?? "";
+    });
+    return arr;
+  }, [dailyPlan]);
+
   const todos = dailyPlan?.todos || [];
 
   const isRefreshing =
@@ -1607,6 +1823,14 @@ export default function PlannerScreen() {
             <GratitudesSection
               dailyPlanId={dailyPlan?.id}
               initial={gratitudes}
+              focus={dailyPlan?.dailyGoal || undefined}
+              dateString={dateString}
+              onSaved={invalidatePlan}
+            />
+
+            <WentWellSection
+              dailyPlanId={dailyPlan?.id}
+              initial={wentWells}
               onSaved={invalidatePlan}
             />
 
@@ -1616,6 +1840,8 @@ export default function PlannerScreen() {
               blueprintTodos={blueprintTodos}
               onChange={invalidatePlan}
             />
+
+            <HealthsetPlaceholderCard />
           </>
         )}
       </ScrollView>
@@ -1825,6 +2051,94 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.separator,
     paddingVertical: 6,
+  },
+  cardEveningGreen: {
+    backgroundColor: "#eef7f0",
+    borderColor: "#bfe0c8",
+  },
+  priorityNumGreen: {
+    backgroundColor: "#d6ebdd",
+  },
+  priorityNumTextGreen: {
+    color: Colors.success,
+  },
+  healthsetCard: {
+    backgroundColor: Colors.background,
+    borderStyle: "dashed",
+  },
+  healthsetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 8,
+  },
+  healthsetBadge: {
+    marginLeft: "auto",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: Colors.goldLight,
+  },
+  healthsetBadgeText: {
+    fontSize: 9,
+    fontFamily: "Inter_700Bold",
+    color: Colors.goldDark,
+    letterSpacing: 0.6,
+  },
+  healthsetBody: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    color: Colors.textSecondary,
+    lineHeight: 17,
+  },
+  gratitudeHeaderRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  suggestBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: Colors.goldLight,
+  },
+  suggestBtnText: {
+    fontSize: 11,
+    fontFamily: "Inter_700Bold",
+    color: Colors.goldDark,
+    letterSpacing: 0.4,
+  },
+  suggestionBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: Colors.goldLight,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 10,
+  },
+  suggestionText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    color: Colors.dark,
+    lineHeight: 18,
+  },
+  suggestionUseBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: Colors.gold,
+  },
+  suggestionUseText: {
+    fontSize: 11,
+    fontFamily: "Inter_700Bold",
+    color: Colors.dark,
+    letterSpacing: 0.4,
   },
   gratitudeRow: {
     flexDirection: "row",

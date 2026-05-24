@@ -1,5 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   useCallback,
   useEffect,
@@ -25,6 +26,30 @@ import type {
   DailyPlanTodo,
   WeekData,
 } from "@/lib/api";
+import PastWeekExceptionalsView from "@/components/planner/PastWeekExceptionalsView";
+
+type WeekTab = "blueprint" | "story" | "past" | "review";
+
+const TABS: Array<{ key: WeekTab; label: string; icon: keyof typeof Feather.glyphMap }> = [
+  { key: "blueprint", label: "Blueprint", icon: "compass" },
+  { key: "story", label: "Story", icon: "book-open" },
+  { key: "past", label: "Past TE", icon: "rotate-ccw" },
+  { key: "review", label: "Review", icon: "trending-up" },
+];
+
+const RESTRICTED_TABS: WeekTab[] = ["story", "past", "review"];
+
+function isReflectionWindow(d: Date = new Date()): boolean {
+  const day = d.getDay();
+  return day === 6 || day === 0;
+}
+
+function currentFlowPhase(d: Date = new Date()): "blueprint" | "execute" | "reflect" {
+  const day = d.getDay();
+  if (day === 1 || day === 2) return "blueprint";
+  if (day === 6 || day === 0) return "reflect";
+  return "execute";
+}
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const FULL_DAY_NAMES = [
@@ -92,6 +117,52 @@ export default function WeekView({ weekStart, onJumpToDay }: WeekViewProps) {
   const queryClient = useQueryClient();
   const weekStartStr = formatDateParam(weekStart);
 
+  const [tab, setTab] = useState<WeekTab>("blueprint");
+  const [earlyUnlock, setEarlyUnlock] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+
+  const unlockKey = `planner_early_unlock_${weekStartStr}`;
+
+  useEffect(() => {
+    let cancelled = false;
+    setHydrated(false);
+    setEarlyUnlock(false);
+    AsyncStorage.getItem(unlockKey)
+      .then((v) => {
+        if (!cancelled) {
+          setEarlyUnlock(v === "1");
+          setHydrated(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setHydrated(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [unlockKey]);
+
+  const inReflectionWindow = isReflectionWindow();
+  const reflectionUnlocked = inReflectionWindow || earlyUnlock;
+
+  useEffect(() => {
+    if (!reflectionUnlocked && RESTRICTED_TABS.includes(tab)) {
+      // stay on the tab to show placeholder
+    }
+  }, [reflectionUnlocked, tab]);
+
+  const handleUnlockEarly = useCallback(async () => {
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    setEarlyUnlock(true);
+    try {
+      await AsyncStorage.setItem(unlockKey, "1");
+    } catch {
+      // best-effort persistence
+    }
+  }, [unlockKey]);
+
   const weekQuery = useQuery({
     queryKey: ["planner", "week", weekStartStr],
     queryFn: () => api.getWeek(weekStartStr),
@@ -117,7 +188,7 @@ export default function WeekView({ weekStart, onJumpToDay }: WeekViewProps) {
     queryClient.invalidateQueries({ queryKey: ["dashboard", "stats"] });
   }, [queryClient, weekStartStr]);
 
-  if (weekQuery.isLoading || dailyQuery.isLoading) {
+  if (weekQuery.isLoading || dailyQuery.isLoading || !hydrated) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" color={Colors.gold} />
@@ -125,35 +196,194 @@ export default function WeekView({ weekStart, onJumpToDay }: WeekViewProps) {
     );
   }
 
+  const restricted = RESTRICTED_TABS.includes(tab) && !reflectionUnlocked;
+
   return (
     <View>
-      <TrulyExceptionalsSection
-        weekId={week?.id}
-        items={week?.trulyExceptionals || []}
-        onSaved={invalidate}
-      />
+      <WeeklyFlowIndicator activeTab={tab} />
 
-      <WeeklyStorySection
-        weekId={week?.id}
-        weekStart={weekStart}
-        days={week?.weeklyStoryDays || []}
-        observation={week?.weeklyStoryObservation?.content || ""}
-        onSaved={invalidate}
-        onJumpToDay={onJumpToDay}
-      />
+      <View style={styles.tabBar}>
+        {TABS.map((t) => {
+          const active = tab === t.key;
+          return (
+            <Pressable
+              key={t.key}
+              onPress={() => {
+                haptic();
+                setTab(t.key);
+              }}
+              style={({ pressed }) => [
+                styles.tabPill,
+                active && styles.tabPillActive,
+                pressed && { opacity: 0.85 },
+              ]}
+            >
+              <Feather
+                name={t.icon}
+                size={12}
+                color={active ? Colors.dark : Colors.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.tabPillText,
+                  active && styles.tabPillTextActive,
+                ]}
+                numberOfLines={1}
+              >
+                {t.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
 
-      <WeeklyReviewSection
-        weekId={week?.id}
-        weekScore={week?.weekScore ?? null}
-        insights={week?.weeklyReviewInsights || ""}
-        onSaved={invalidate}
-      />
+      {restricted ? (
+        <WeeklyReflectionPlaceholder
+          tab={tab}
+          onUnlock={handleUnlockEarly}
+        />
+      ) : tab === "blueprint" ? (
+        <>
+          <TrulyExceptionalsSection
+            weekId={week?.id}
+            items={week?.trulyExceptionals || []}
+            onSaved={invalidate}
+          />
 
-      <BlueprintTodosSection
-        dailyPlanId={daily?.id}
-        todos={(daily?.todos || []).filter((t) => t.source === "wds")}
-        onSaved={invalidate}
-      />
+          <BlueprintTodosSection
+            dailyPlanId={daily?.id}
+            todos={(daily?.todos || []).filter((t) => t.source === "wds")}
+            onSaved={invalidate}
+          />
+        </>
+      ) : tab === "story" ? (
+        <WeeklyStorySection
+          weekId={week?.id}
+          weekStart={weekStart}
+          days={week?.weeklyStoryDays || []}
+          observation={week?.weeklyStoryObservation?.content || ""}
+          onSaved={invalidate}
+          onJumpToDay={onJumpToDay}
+        />
+      ) : tab === "past" ? (
+        <PastWeekExceptionalsView weekStart={weekStart} />
+      ) : (
+        <WeeklyReviewSection
+          weekId={week?.id}
+          weekScore={week?.weekScore ?? null}
+          insights={week?.weeklyReviewInsights || ""}
+          onSaved={invalidate}
+        />
+      )}
+    </View>
+  );
+}
+
+interface WeeklyFlowIndicatorProps {
+  activeTab: WeekTab;
+}
+
+function WeeklyFlowIndicator({ activeTab }: WeeklyFlowIndicatorProps) {
+  const phase = currentFlowPhase();
+  const phases: Array<{
+    key: "blueprint" | "execute" | "reflect";
+    label: string;
+    icon: keyof typeof Feather.glyphMap;
+  }> = [
+    { key: "blueprint", label: "Plan", icon: "compass" },
+    { key: "execute", label: "Live", icon: "zap" },
+    { key: "reflect", label: "Reflect", icon: "rotate-ccw" },
+  ];
+
+  const labelFor: Record<WeekTab, string> = {
+    blueprint: "Set the week's direction.",
+    story: "Capture each day as it lived.",
+    past: "See what mattered last week.",
+    review: "Score the week and learn.",
+  };
+
+  return (
+    <View style={styles.flowCard}>
+      <View style={styles.flowRow}>
+        {phases.map((p, i) => {
+          const active = phase === p.key;
+          return (
+            <React.Fragment key={p.key}>
+              <View
+                style={[
+                  styles.flowStep,
+                  active && styles.flowStepActive,
+                ]}
+              >
+                <Feather
+                  name={p.icon}
+                  size={12}
+                  color={active ? Colors.dark : Colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.flowStepText,
+                    active && styles.flowStepTextActive,
+                  ]}
+                >
+                  {p.label}
+                </Text>
+              </View>
+              {i < phases.length - 1 ? (
+                <View style={styles.flowConnector} />
+              ) : null}
+            </React.Fragment>
+          );
+        })}
+      </View>
+      <Text style={styles.flowHint}>{labelFor[activeTab]}</Text>
+    </View>
+  );
+}
+
+interface WeeklyReflectionPlaceholderProps {
+  tab: WeekTab;
+  onUnlock: () => void;
+}
+
+function WeeklyReflectionPlaceholder({
+  tab,
+  onUnlock,
+}: WeeklyReflectionPlaceholderProps) {
+  const titleFor: Record<WeekTab, string> = {
+    blueprint: "Weekly Blueprint",
+    story: "Weekly Story — unlocks Saturday",
+    past: "Last Week's Exceptionals — unlocks Saturday",
+    review: "Weekly Reflection — unlocks Saturday",
+  };
+  const bodyFor: Record<WeekTab, string> = {
+    blueprint: "",
+    story:
+      "Spend the week living your plan. On Saturday, come back to capture how each day unfolded.",
+    past:
+      "Last week's Truly Exceptionals appear here once the reflection window opens on Saturday.",
+    review:
+      "On Saturday, you'll rate the week and capture what you learned. Until then, focus on living it.",
+  };
+
+  return (
+    <View style={styles.placeholderCard}>
+      <View style={styles.placeholderIconWrap}>
+        <Feather name="lock" size={18} color={Colors.goldDark} />
+      </View>
+      <Text style={styles.placeholderTitle}>{titleFor[tab]}</Text>
+      <Text style={styles.placeholderBody}>{bodyFor[tab]}</Text>
+      <Pressable
+        onPress={onUnlock}
+        style={({ pressed }) => [
+          styles.unlockBtn,
+          pressed && { opacity: 0.85 },
+        ]}
+        testID="weekly-unlock-early-btn"
+      >
+        <Feather name="unlock" size={14} color={Colors.dark} />
+        <Text style={styles.unlockBtnText}>Unlock early</Text>
+      </Pressable>
     </View>
   );
 }
@@ -962,6 +1192,139 @@ const styles = StyleSheet.create({
   loading: {
     paddingVertical: 60,
     alignItems: "center",
+  },
+  flowCard: {
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+  },
+  flowRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  flowStep: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: Colors.background,
+  },
+  flowStepActive: {
+    backgroundColor: Colors.goldLight,
+  },
+  flowStepText: {
+    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
+    color: Colors.textSecondary,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  flowStepTextActive: {
+    color: Colors.dark,
+  },
+  flowConnector: {
+    width: 18,
+    height: 1,
+    backgroundColor: Colors.cardBorder,
+  },
+  flowHint: {
+    marginTop: 6,
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+    color: Colors.textSecondary,
+    textAlign: "center",
+  },
+  tabBar: {
+    flexDirection: "row",
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    padding: 4,
+    marginBottom: 12,
+    gap: 4,
+  },
+  tabPill: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+  },
+  tabPillActive: {
+    backgroundColor: Colors.goldLight,
+  },
+  tabPillText: {
+    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
+    color: Colors.textSecondary,
+  },
+  tabPillTextActive: {
+    color: Colors.dark,
+    fontFamily: "Inter_700Bold",
+  },
+  placeholderCard: {
+    backgroundColor: Colors.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    borderStyle: "dashed",
+    padding: 24,
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  placeholderIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.goldLight,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  placeholderTitle: {
+    fontSize: 15,
+    fontFamily: "Inter_700Bold",
+    color: Colors.dark,
+    textAlign: "center",
+    marginBottom: 6,
+  },
+  placeholderBody: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    color: Colors.textSecondary,
+    textAlign: "center",
+    lineHeight: 19,
+    marginBottom: 14,
+    paddingHorizontal: 8,
+  },
+  unlockBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: Colors.goldLight,
+    borderWidth: 1,
+    borderColor: Colors.gold,
+  },
+  unlockBtnText: {
+    fontSize: 12,
+    fontFamily: "Inter_700Bold",
+    color: Colors.dark,
+    letterSpacing: 0.3,
   },
   card: {
     backgroundColor: Colors.card,
