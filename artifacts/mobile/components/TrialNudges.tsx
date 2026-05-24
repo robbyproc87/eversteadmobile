@@ -48,15 +48,17 @@ export function TrialNudges() {
   useEffect(() => {
     if (!plan.isTrial) return;
     if (plan.trialDaysLeft < 5 || plan.trialDaysLeft > 7) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
     AsyncStorage.getItem(FLAG_TOAST).then((v) => {
-      if (v === "true") return;
+      if (cancelled || v === "true") return;
       setToastVisible(true);
       Animated.timing(fade, {
         toValue: 1,
         duration: 260,
         useNativeDriver: true,
       }).start();
-      const t = setTimeout(() => {
+      timer = setTimeout(() => {
         Animated.timing(fade, {
           toValue: 0,
           duration: 220,
@@ -64,8 +66,11 @@ export function TrialNudges() {
         }).start(() => setToastVisible(false));
         AsyncStorage.setItem(FLAG_TOAST, "true").catch(() => {});
       }, 8_000);
-      return () => clearTimeout(t);
     });
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [plan.isTrial, plan.trialDaysLeft, fade]);
 
   // Day 2-0 persistent banner (dismissable per-day)

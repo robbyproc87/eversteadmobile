@@ -361,6 +361,12 @@ export default function MeditationScreen() {
   const handleRatingSelect = useCallback(
     (rating: number) => {
       if (!ratingForSession) return;
+      if (!plan.isPro) {
+        setShowRatingPrompt(false);
+        setRatingForSession(null);
+        setAmbientUpgradeOpen(true);
+        return;
+      }
       if (Platform.OS !== "web") {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       }
@@ -371,17 +377,21 @@ export default function MeditationScreen() {
         setRatingForSession(null);
       }, 600);
     },
-    [ratingForSession, updateRating],
+    [ratingForSession, updateRating, plan.isPro],
   );
 
   const handleRateRecent = useCallback(
     (sessionId: string, rating: number) => {
+      if (!plan.isPro) {
+        setAmbientUpgradeOpen(true);
+        return;
+      }
       if (Platform.OS !== "web") {
         Haptics.selectionAsync();
       }
       updateRating.mutate({ id: sessionId, rating });
     },
-    [updateRating],
+    [updateRating, plan.isPro],
   );
 
   const handleRefresh = useCallback(() => {

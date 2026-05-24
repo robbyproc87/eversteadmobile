@@ -12,8 +12,10 @@ import {
 } from "react-native";
 
 import Colors from "@/constants/colors";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, isPaymentRequiredError } from "@/lib/api";
 import { useToast } from "@/contexts/ToastContext";
+import { usePlan } from "@/lib/plan";
+import { UpgradePrompt } from "@/components/UpgradePrompt";
 
 function haptic() {
   if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -35,6 +37,8 @@ const AWARENESS_LABELS = ["Foggy", "Distracted", "Present", "Clear", "Sharp"];
 export default function DailyMindfulnessCheckin() {
   const queryClient = useQueryClient();
   const { showError, showSuccess } = useToast();
+  const plan = usePlan();
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
 
   const checkinQuery = useQuery({
     queryKey: ["meditation", "daily-checkin"],
@@ -68,6 +72,10 @@ export default function DailyMindfulnessCheckin() {
       setEditing(false);
     },
     onError: (err) => {
+      if (isPaymentRequiredError(err)) {
+        setUpgradeOpen(true);
+        return;
+      }
       const msg = err instanceof ApiError ? err.message : "Couldn't save check-in.";
       showError(msg);
     },
@@ -77,6 +85,31 @@ export default function DailyMindfulnessCheckin() {
     return (
       <View style={styles.card}>
         <ActivityIndicator color={Colors.gold} />
+      </View>
+    );
+  }
+
+  if (!plan.loading && !plan.isPro) {
+    return (
+      <View style={styles.card}>
+        <View style={styles.headerRow}>
+          <View style={styles.iconWrap}>
+            <Feather name="sun" size={16} color={Colors.gold} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.title}>Daily Mindfulness Check-in</Text>
+            <Text style={styles.subtitle}>
+              Track awareness and wellbeing — a Pro feature.
+            </Text>
+          </View>
+        </View>
+        <View style={{ marginTop: 12 }}>
+          <UpgradePrompt
+            variant="compact"
+            feature="mindfulness_checkin"
+            message="Daily mindfulness check-ins are a Pro feature."
+          />
+        </View>
       </View>
     );
   }
@@ -184,7 +217,13 @@ export default function DailyMindfulnessCheckin() {
           </Pressable>
         ) : null}
         <Pressable
-          onPress={() => saveMutation.mutate()}
+          onPress={() => {
+            if (!plan.isPro) {
+              setUpgradeOpen(true);
+              return;
+            }
+            saveMutation.mutate();
+          }}
           disabled={saveMutation.isPending}
           style={({ pressed }) => [
             styles.saveBtn,
@@ -202,6 +241,16 @@ export default function DailyMindfulnessCheckin() {
           )}
         </Pressable>
       </View>
+      {upgradeOpen && (
+        <View style={{ marginTop: 12 }}>
+          <UpgradePrompt
+            variant="full"
+            feature="mindfulness_checkin"
+            message="Daily mindfulness check-ins are a Pro feature."
+            onSuccess={() => setUpgradeOpen(false)}
+          />
+        </View>
+      )}
     </View>
   );
 }

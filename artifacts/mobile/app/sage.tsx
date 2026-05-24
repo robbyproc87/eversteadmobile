@@ -439,6 +439,7 @@ export default function SageScreen() {
     const trimmed = input.trim();
     if (!trimmed) return;
     if (isStreaming || isSending) return;
+    if (chatLocked) return;
     if (Platform.OS !== "web") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
@@ -733,7 +734,7 @@ export default function SageScreen() {
               onChangeText={setInput}
               multiline
               maxLength={2000}
-              editable={!isStreaming && !isSending && !isPreview}
+              editable={!isStreaming && !isSending && !isPreview && !chatLocked}
               onSubmitEditing={Platform.OS === "web" ? handleSend : undefined}
               blurOnSubmit={false}
             />
@@ -742,12 +743,12 @@ export default function SageScreen() {
               style={({ pressed }) => [
                 styles.sendButton,
                 { backgroundColor: activeCoach.color },
-                (!input.trim() || isStreaming || isSending || isPreview) &&
+                (!input.trim() || isStreaming || isSending || isPreview || chatLocked) &&
                   styles.sendButtonDisabled,
-                pressed && input.trim() && !isPreview && { opacity: 0.85 },
+                pressed && input.trim() && !isPreview && !chatLocked && { opacity: 0.85 },
               ]}
               disabled={
-                !input.trim() || isStreaming || isSending || isPreview
+                !input.trim() || isStreaming || isSending || isPreview || chatLocked
               }
               accessibilityLabel="Send message"
             >
