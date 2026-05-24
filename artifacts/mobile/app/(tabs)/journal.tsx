@@ -27,6 +27,8 @@ import {
   isPreviewAuthError,
   type JournalEntry,
 } from "@/lib/api";
+import { usePlan, FREE_JOURNAL_LIMIT_PER_MONTH } from "@/lib/plan";
+import { UpgradePrompt } from "@/components/UpgradePrompt";
 
 function haptic() {
   if (Platform.OS !== "web") {
@@ -168,10 +170,30 @@ export default function JournalScreen() {
     );
   }, [entriesQuery.data]);
 
+  const plan = usePlan();
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const entriesThisMonth = useMemo(() => {
+    const now = new Date();
+    return entries.filter((e) => {
+      const d = new Date(e.createdAt);
+      return (
+        d.getFullYear() === now.getFullYear() &&
+        d.getMonth() === now.getMonth()
+      );
+    }).length;
+  }, [entries]);
+
   const onCreate = useCallback(() => {
     haptic();
+    if (
+      !plan.isPro &&
+      entriesThisMonth >= FREE_JOURNAL_LIMIT_PER_MONTH
+    ) {
+      setUpgradeOpen(true);
+      return;
+    }
     router.push("/journal-entry?id=new");
-  }, [router]);
+  }, [router, plan.isPro, entriesThisMonth]);
 
   const onOpen = useCallback(
     (id: string) => {
@@ -281,11 +303,59 @@ export default function JournalScreen() {
       >
         <Feather name="plus" size={26} color={Colors.dark} />
       </Pressable>
+      {upgradeOpen && (
+        <View style={styles.upgradeOverlay}>
+          <View style={styles.upgradeSheet}>
+            <UpgradePrompt
+              variant="full"
+              feature="unlimited_journal"
+              message={`You've reached ${FREE_JOURNAL_LIMIT_PER_MONTH} journal entries this month. Upgrade to Pro for unlimited journaling.`}
+              onSuccess={() => setUpgradeOpen(false)}
+            />
+            <Pressable
+              onPress={() => setUpgradeOpen(false)}
+              style={({ pressed }) => [
+                styles.upgradeClose,
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <Text style={styles.upgradeCloseText}>Not now</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  upgradeOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    zIndex: 100,
+  },
+  upgradeSheet: {
+    width: "100%",
+    maxWidth: 480,
+    gap: 12,
+  },
+  upgradeClose: {
+    alignSelf: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  upgradeCloseText: {
+    color: "#fff",
+    fontSize: 14,
+    fontFamily: "Inter_500Medium",
+  },
   container: {
     flex: 1,
     backgroundColor: Colors.background,

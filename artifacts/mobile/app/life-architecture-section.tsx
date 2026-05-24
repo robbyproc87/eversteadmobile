@@ -17,6 +17,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AuthGuard } from "@/components/AuthGuard";
+import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { SageChatPanel } from "@/components/life-architecture/SageChatPanel";
 import { SectionForm } from "@/components/life-architecture/SectionForm";
 import Colors from "@/constants/colors";
@@ -174,14 +175,18 @@ export default function LifeArchitectureSectionScreen() {
             { paddingTop: insets.top + webTopInset, paddingBottom: insets.bottom },
           ]}
         >
-          <Text style={styles.upgradeMsg}>
-            Life Architecture is a Pro feature. Upgrade to begin shaping your
-            year.
-          </Text>
+          <View style={{ width: "100%", maxWidth: 480 }}>
+            <UpgradePrompt
+              variant="full"
+              feature="life_architecture"
+              message="Life Architecture is a Pro feature. Upgrade to begin shaping your year."
+            />
+          </View>
           <Pressable
             onPress={handleClose}
             style={({ pressed }) => [
               styles.closeBtnLg,
+              { marginTop: 16 },
               pressed && { opacity: 0.7 },
             ]}
           >

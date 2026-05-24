@@ -17,8 +17,15 @@ import {
 } from "react-native";
 
 import Colors from "@/constants/colors";
-import { api, ApiError, type GeneratedMeditationDetail } from "@/lib/api";
+import {
+  api,
+  ApiError,
+  isPaymentRequiredError,
+  type GeneratedMeditationDetail,
+} from "@/lib/api";
 import { useToast } from "@/contexts/ToastContext";
+import { usePlan } from "@/lib/plan";
+import { UpgradePrompt } from "@/components/UpgradePrompt";
 
 interface Props {
   visible: boolean;
@@ -80,6 +87,9 @@ export default function GenerateSessionDialog({ visible, onClose, onGenerated }:
     }
   }, [visible]);
 
+  const plan = usePlan();
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+
   const generateMutation = useMutation({
     mutationFn: () =>
       api.generateMeditation({
@@ -94,12 +104,17 @@ export default function GenerateSessionDialog({ visible, onClose, onGenerated }:
       onClose();
     },
     onError: (err) => {
+      if (isPaymentRequiredError(err)) {
+        setUpgradeOpen(true);
+        return;
+      }
       const msg = err instanceof ApiError ? err.message : "Couldn't generate. Please try again.";
       showError(msg);
     },
   });
 
   const generating = generateMutation.isPending;
+  const blocked = !plan.isPro;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={generating ? () => {} : onClose}>
@@ -186,12 +201,30 @@ export default function GenerateSessionDialog({ visible, onClose, onGenerated }:
               </View>
 
               <Pressable
-                onPress={() => generateMutation.mutate()}
+                onPress={() => {
+                  if (blocked) {
+                    setUpgradeOpen(true);
+                    return;
+                  }
+                  generateMutation.mutate();
+                }}
                 style={({ pressed }) => [styles.generateBtn, pressed && { opacity: 0.85 }]}
               >
                 <Feather name="zap" size={16} color={Colors.dark} />
-                <Text style={styles.generateBtnText}>Generate</Text>
+                <Text style={styles.generateBtnText}>
+                  {blocked ? "Upgrade to generate" : "Generate"}
+                </Text>
               </Pressable>
+              {upgradeOpen && (
+                <View style={{ marginTop: 16 }}>
+                  <UpgradePrompt
+                    variant="full"
+                    feature="ai_meditations"
+                    message="Generated meditations are a Pro feature. Upgrade to create custom sessions."
+                    onSuccess={() => setUpgradeOpen(false)}
+                  />
+                </View>
+              )}
             </ScrollView>
           )}
         </View>

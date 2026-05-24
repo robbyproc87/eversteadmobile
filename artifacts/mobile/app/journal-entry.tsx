@@ -29,12 +29,14 @@ import {
   api,
   ApiError,
   getMoodOption,
+  isPaymentRequiredError,
   isPreviewAuthError,
   MOOD_OPTIONS,
   type InkStrokeData,
   type JournalEntry,
   type JournalEntryInput,
 } from "@/lib/api";
+import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { PreviewEmptyState } from "@/components/PreviewEmptyState";
 import {
   InkPad,
@@ -399,6 +401,7 @@ export default function JournalEntryScreen() {
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [isLoadingPrompt, setIsLoadingPrompt] = useState(false);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
   const inkPadRef = useRef<InkPadHandles>(null);
   const initializedRef = useRef(false);
 
@@ -431,8 +434,12 @@ export default function JournalEntryScreen() {
         return `${trimmed}${sep}${prompt}\n\n`;
       });
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "Couldn't get a prompt.";
-      showError(msg);
+      if (isPaymentRequiredError(err)) {
+        setUpgradeOpen(true);
+      } else {
+        const msg = err instanceof ApiError ? err.message : "Couldn't get a prompt.";
+        showError(msg);
+      }
     } finally {
       setIsLoadingPrompt(false);
     }
@@ -530,11 +537,15 @@ export default function JournalEntryScreen() {
         queryClient.invalidateQueries({ queryKey: ["journal", "entry", entryId] });
         queryClient.invalidateQueries({ queryKey: ["journal", "list"] });
       } catch (err) {
-        const msg =
-          err instanceof ApiError
-            ? err.message
-            : "Couldn't transcribe handwriting.";
-        showError(msg);
+        if (isPaymentRequiredError(err)) {
+          setUpgradeOpen(true);
+        } else {
+          const msg =
+            err instanceof ApiError
+              ? err.message
+              : "Couldn't transcribe handwriting.";
+          showError(msg);
+        }
       } finally {
         setIsTranscribing(false);
       }
@@ -1093,11 +1104,59 @@ export default function JournalEntryScreen() {
         onClose={() => setTemplatePickerOpen(false)}
         onSelect={handleSelectTemplate}
       />
+      {upgradeOpen && (
+        <View style={styles.upgradeOverlay} pointerEvents="box-none">
+          <View style={styles.upgradeSheet}>
+            <UpgradePrompt
+              variant="full"
+              feature="ai_prompts"
+              message="AI journal prompts are a Pro feature. Upgrade to unlock."
+              onSuccess={() => setUpgradeOpen(false)}
+            />
+            <Pressable
+              onPress={() => setUpgradeOpen(false)}
+              style={({ pressed }) => [
+                styles.upgradeClose,
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <Text style={styles.upgradeCloseText}>Not now</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
     </>
   );
 }
 
 const styles = StyleSheet.create({
+  upgradeOverlay: {
+    position: "absolute",
+    inset: 0 as never,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+  },
+  upgradeSheet: {
+    width: "100%",
+    maxWidth: 480,
+    gap: 12,
+  },
+  upgradeClose: {
+    alignSelf: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  upgradeCloseText: {
+    color: "#fff",
+    fontSize: 14,
+    fontFamily: "Inter_500Medium",
+  },
   container: {
     flex: 1,
     backgroundColor: Colors.background,

@@ -26,6 +26,15 @@ const AUTO_DISMISS_MS = 15_000;
 const FETCH_DELAY_MS = 3_000;
 const COOLDOWN_MS = 60_000;
 
+function normalizeRoute(route: string): string {
+  if (!route) return route;
+  if (route === "/") return "/(tabs)";
+  if (route === "/planner") return "/(tabs)/planner";
+  if (route === "/journal") return "/(tabs)/journal";
+  if (route === "/meditation") return "/(tabs)/meditation";
+  return route;
+}
+
 export function NudgeToast() {
   const pathname = usePathname();
   const router = useRouter();
@@ -105,7 +114,7 @@ export function NudgeToast() {
               onPress={() => {
                 dismiss();
                 try {
-                  router.push(nudge.cta!.route as never);
+                  router.push(normalizeRoute(nudge.cta!.route) as never);
                 } catch {
                   // ignore
                 }

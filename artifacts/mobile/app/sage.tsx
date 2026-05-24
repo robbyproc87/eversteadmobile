@@ -40,12 +40,14 @@ import {
 } from "@/lib/coach";
 import {
   coachApi,
+  isPaymentRequiredError,
   isPreviewAuthError,
   type CoachActionInfo,
   type CoachChatMessage,
   type CoachConversationDetail,
   type CoachConversationListItem,
 } from "@/lib/api";
+import { UpgradePrompt } from "@/components/UpgradePrompt";
 
 interface ChatMessage {
   id: string;
@@ -252,6 +254,7 @@ export default function SageScreen() {
     [],
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [chatLocked, setChatLocked] = useState(false);
   const [input, setInput] = useState("");
 
   const abortRef = useRef<AbortController | null>(null);
@@ -372,15 +375,20 @@ export default function SageScreen() {
           err instanceof Error &&
           (err.name === "AbortError" || /abort/i.test(err.message));
         if (!aborted) {
-          // eslint-disable-next-line no-console
-          console.warn("Coach chat error", err);
-          showToast(
-            err instanceof Error
-              ? err.message
-              : "Couldn't reach your coach. Please try again.",
-            { variant: "error" },
-          );
-          setOptimisticMessages([]);
+          if (isPaymentRequiredError(err)) {
+            setChatLocked(true);
+            setOptimisticMessages([]);
+          } else {
+            // eslint-disable-next-line no-console
+            console.warn("Coach chat error", err);
+            showToast(
+              err instanceof Error
+                ? err.message
+                : "Couldn't reach your coach. Please try again.",
+              { variant: "error" },
+            );
+            setOptimisticMessages([]);
+          }
         }
       } finally {
         if (abortRef.current === controller) {
@@ -390,6 +398,7 @@ export default function SageScreen() {
         setIsThinking(false);
         setIsSending(false);
         setStreamingContent("");
+        setStreamingActions([]);
       }
     },
     [activeConvId, activeCoachId, conversations, queryClient, showToast],
@@ -754,6 +763,16 @@ export default function SageScreen() {
             </Pressable>
           </View>
         </KeyboardAvoidingView>
+        {chatLocked && (
+          <View style={styles.lockOverlay}>
+            <UpgradePrompt
+              variant="full"
+              feature="ai_coaching"
+              message="Coach chat is a Pro feature. Upgrade to keep talking with your coaches."
+              onSuccess={() => setChatLocked(false)}
+            />
+          </View>
+        )}
         <CoachIntroFlow />
         <CoachSettingsPanel
           visible={settingsOpen}
@@ -765,6 +784,13 @@ export default function SageScreen() {
 }
 
 const styles = StyleSheet.create({
+  lockOverlay: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    top: 120,
+    zIndex: 50,
+  },
   container: {
     flex: 1,
     backgroundColor: Colors.background,

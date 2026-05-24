@@ -18,6 +18,7 @@ import { AppDrawer } from "@/components/AppDrawer";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { SageOrb } from "@/components/SageOrb";
 import { NudgeToast } from "@/components/coach/NudgeToast";
+import { TrialNudges } from "@/components/TrialNudges";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { DrawerProvider, useDrawer } from "@/contexts/DrawerContext";
 import { ToastProvider } from "@/contexts/ToastContext";
@@ -108,7 +109,10 @@ function RootLayoutContent() {
       </Stack>
       {showOrb && <SageOrb />}
       {session && !isSageOpen && !isLoginScreen && !isOnboarding && (
-        <NudgeToast />
+        <>
+          <NudgeToast />
+          <TrialNudges />
+        </>
       )}
       <AppDrawer
         visible={drawerOpen}

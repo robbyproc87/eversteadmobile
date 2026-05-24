@@ -22,6 +22,8 @@ import { useToast } from "@/contexts/ToastContext";
 import Colors from "@/constants/colors";
 import { api, isPreviewAuthError } from "@/lib/api";
 import type { GeneratedMeditation, MeditationSession } from "@/lib/api";
+import { usePlan } from "@/lib/plan";
+import { UpgradePrompt } from "@/components/UpgradePrompt";
 import DailyMindfulnessCheckin from "@/components/meditation/DailyMindfulnessCheckin";
 import GenerateSessionDialog from "@/components/meditation/GenerateSessionDialog";
 import { supabase } from "@/lib/supabase";
@@ -96,6 +98,8 @@ export default function MeditationScreen() {
   const ambientTokenRef = useRef(0);
 
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
+  const [ambientUpgradeOpen, setAmbientUpgradeOpen] = useState(false);
+  const plan = usePlan();
   const [showRatingPrompt, setShowRatingPrompt] = useState(false);
   const [pendingDurationS, setPendingDurationS] = useState(0);
   const [ratingForSession, setRatingForSession] = useState<{
@@ -335,6 +339,11 @@ export default function MeditationScreen() {
     (sound: AmbientSound) => {
       if (Platform.OS !== "web") {
         Haptics.selectionAsync();
+      }
+      const idx = AMBIENT_SOUNDS.findIndex((s) => s.id === sound.id);
+      if (!plan.isPro && idx > 0) {
+        setAmbientUpgradeOpen(true);
+        return;
       }
       setAmbientId(sound.id);
       // If actively playing, restart with new sound
@@ -773,6 +782,40 @@ export default function MeditationScreen() {
         visible={generateDialogOpen}
         onClose={() => setGenerateDialogOpen(false)}
       />
+
+      <Modal
+        transparent
+        visible={ambientUpgradeOpen}
+        animationType="fade"
+        onRequestClose={() => setAmbientUpgradeOpen(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { padding: 0, overflow: "hidden" }]}>
+            <UpgradePrompt
+              variant="full"
+              feature="premium_ambient"
+              message="Additional ambient soundscapes are a Pro feature. Upgrade to unlock all sounds."
+              onSuccess={() => setAmbientUpgradeOpen(false)}
+            />
+            <Pressable
+              onPress={() => setAmbientUpgradeOpen(false)}
+              style={({ pressed }) => [
+                { paddingVertical: 12, alignItems: "center" },
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <Text
+                style={{
+                  color: Colors.textSecondary,
+                  fontFamily: "Inter_500Medium",
+                }}
+              >
+                Not now
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       {/* Post-session rating modal */}
       <Modal
