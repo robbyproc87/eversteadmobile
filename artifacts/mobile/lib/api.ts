@@ -177,6 +177,34 @@ export function isPreviewAuthError(err: unknown): boolean {
   return err instanceof PreviewAuthError;
 }
 
+export class PaymentRequiredError extends ApiError {
+  feature?: string;
+  constructor(feature?: string, message?: string) {
+    super(message ?? "Subscription required", 402, "Payment Required", {
+      error: "subscription_required",
+      feature,
+    });
+    this.name = "PaymentRequiredError";
+    this.feature = feature;
+  }
+}
+
+export function isPaymentRequiredError(err: unknown): err is PaymentRequiredError {
+  if (err instanceof PaymentRequiredError) return true;
+  if (err instanceof ApiError && err.status === 402) return true;
+  return false;
+}
+
+export interface CoachSettings {
+  id?: string;
+  proactivityLevel: number;
+  accessJournal: boolean;
+  accessPlanner: boolean;
+  accessMeditation: boolean;
+  accessBooks: boolean;
+  accessMood: boolean;
+}
+
 function extractErrorMessage(body: unknown, fallback: string): string {
   if (body && typeof body === "object") {
     const obj = body as Record<string, unknown>;
@@ -225,6 +253,13 @@ export async function apiFetch<T>(
       }
     } catch {
       // ignore body read errors
+    }
+    if (res.status === 402) {
+      const feature =
+        body && typeof body === "object"
+          ? ((body as Record<string, unknown>).feature as string | undefined)
+          : undefined;
+      throw new PaymentRequiredError(feature, extractErrorMessage(body, fallback));
     }
     throw new ApiError(extractErrorMessage(body, fallback), res.status, res.statusText, body);
   }
@@ -1087,6 +1122,14 @@ export const coachApi = {
     apiFetch<CoachConversationDetail>(
       `/coach/conversations/${encodeURIComponent(id)}`,
     ),
+
+  getSettings: () => apiFetch<CoachSettings>("/coach/settings"),
+
+  saveSettings: (input: Partial<CoachSettings>) =>
+    apiFetch<CoachSettings>("/coach/settings", {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
 
   async *streamChat(
     body: CoachChatRequest,

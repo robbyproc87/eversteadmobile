@@ -26,6 +26,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AuthGuard } from "@/components/AuthGuard";
 import { PreviewEmptyState } from "@/components/PreviewEmptyState";
+import { CoachIntroFlow } from "@/components/coach/CoachIntroFlow";
+import { CoachActionBadge } from "@/components/coach/CoachActionBadge";
+import { CoachSettingsPanel } from "@/components/coach/CoachSettingsPanel";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
@@ -38,6 +41,7 @@ import {
 import {
   coachApi,
   isPreviewAuthError,
+  type CoachActionInfo,
   type CoachChatMessage,
   type CoachConversationDetail,
   type CoachConversationListItem,
@@ -48,6 +52,7 @@ interface ChatMessage {
   role: string;
   content: string;
   createdAt?: string;
+  actions?: CoachActionInfo[] | null;
 }
 
 function CoachOrb({
@@ -166,11 +171,13 @@ function MessageBubble({
   content,
   coachId,
   isStreaming,
+  actions,
 }: {
   role: string;
   content: string;
   coachId: string;
   isStreaming?: boolean;
+  actions?: CoachActionInfo[] | null;
 }) {
   const isUser = role === "user";
   const coach = getCoach(coachId);
@@ -214,6 +221,11 @@ function MessageBubble({
         {isStreaming && (
           <View style={[styles.cursor, { backgroundColor: coach.color }]} />
         )}
+        {actions && actions.length > 0
+          ? actions.map((a, i) => (
+              <CoachActionBadge key={i} action={a} />
+            ))
+          : null}
       </View>
     </View>
   );
@@ -236,6 +248,10 @@ export default function SageScreen() {
   const [optimisticMessages, setOptimisticMessages] = useState<ChatMessage[]>(
     [],
   );
+  const [streamingActions, setStreamingActions] = useState<CoachActionInfo[]>(
+    [],
+  );
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [input, setInput] = useState("");
 
   const abortRef = useRef<AbortController | null>(null);
@@ -321,6 +337,10 @@ export default function SageScreen() {
           }
           if (chunk.action) {
             setIsThinking(false);
+            setStreamingActions((prev) => [
+              ...prev,
+              chunk.action as CoachActionInfo,
+            ]);
           }
           if (chunk.text) {
             setIsThinking(false);
@@ -335,6 +355,7 @@ export default function SageScreen() {
             setIsStreaming(false);
             setIsThinking(false);
             setStreamingContent("");
+            setStreamingActions([]);
             setOptimisticMessages([]);
             if (convId) {
               queryClient.invalidateQueries({
@@ -535,16 +556,28 @@ export default function SageScreen() {
               </Text>
             </View>
           </View>
-          <Pressable
-            onPress={handleClose}
-            style={({ pressed }) => [
-              styles.closeButton,
-              pressed && { opacity: 0.6 },
-            ]}
-            accessibilityLabel="Close coaching"
-          >
-            <Feather name="x" size={22} color={Colors.textSecondary} />
-          </Pressable>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+            <Pressable
+              onPress={() => setSettingsOpen(true)}
+              style={({ pressed }) => [
+                styles.closeButton,
+                pressed && { opacity: 0.6 },
+              ]}
+              accessibilityLabel="Coach settings"
+            >
+              <Feather name="settings" size={20} color={Colors.textSecondary} />
+            </Pressable>
+            <Pressable
+              onPress={handleClose}
+              style={({ pressed }) => [
+                styles.closeButton,
+                pressed && { opacity: 0.6 },
+              ]}
+              accessibilityLabel="Close coaching"
+            >
+              <Feather name="x" size={22} color={Colors.textSecondary} />
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.selectorWrap}>
@@ -646,6 +679,7 @@ export default function SageScreen() {
                 role={msg.role}
                 content={msg.content}
                 coachId={activeCoachId}
+                actions={msg.actions ?? null}
               />
             ))}
 
@@ -655,6 +689,7 @@ export default function SageScreen() {
                 content={streamingContent}
                 coachId={activeCoachId}
                 isStreaming
+                actions={streamingActions}
               />
             )}
 
@@ -719,6 +754,11 @@ export default function SageScreen() {
             </Pressable>
           </View>
         </KeyboardAvoidingView>
+        <CoachIntroFlow />
+        <CoachSettingsPanel
+          visible={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+        />
       </View>
     </AuthGuard>
   );
