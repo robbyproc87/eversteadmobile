@@ -21,26 +21,8 @@ export function CoachActionBadge({ action }: { action: CoachActionInfo }) {
   const color = isOk ? "#059669" : "#dc2626";
   const bg = isOk ? "rgba(5,150,105,0.10)" : "rgba(220,38,38,0.10)";
 
-  const onPress = () => {
-    if (!action.navigateTo) return;
-    try {
-      router.push(mapRoute(action.navigateTo) as never);
-    } catch {
-      // ignore unknown routes
-    }
-  };
-
-  const Wrap = action.navigateTo ? Pressable : View;
-
-  return (
-    <Wrap
-      onPress={action.navigateTo ? onPress : undefined}
-      style={({ pressed }: { pressed?: boolean } = {}) => [
-        styles.badge,
-        { backgroundColor: bg },
-        pressed && action.navigateTo && { opacity: 0.7 },
-      ]}
-    >
+  const content = (
+    <>
       <Feather
         name={isOk ? "check-circle" : "x-circle"}
         size={14}
@@ -52,7 +34,33 @@ export function CoachActionBadge({ action }: { action: CoachActionInfo }) {
       {action.navigateTo ? (
         <Feather name="external-link" size={13} color={color} />
       ) : null}
-    </Wrap>
+    </>
+  );
+
+  if (action.navigateTo) {
+    const target = action.navigateTo;
+    return (
+      <Pressable
+        onPress={() => {
+          try {
+            router.push(mapRoute(target) as never);
+          } catch {
+            // ignore unknown routes
+          }
+        }}
+        style={({ pressed }) => [
+          styles.badge,
+          { backgroundColor: bg },
+          pressed && { opacity: 0.7 },
+        ]}
+      >
+        {content}
+      </Pressable>
+    );
+  }
+
+  return (
+    <View style={[styles.badge, { backgroundColor: bg }]}>{content}</View>
   );
 }
 
@@ -75,5 +83,4 @@ const styles = StyleSheet.create({
   },
 });
 
-// keep Colors import used to avoid lint dropping it across templates
 void Colors;
