@@ -457,6 +457,58 @@ export const api = {
 
   listMeditationTracks: () =>
     apiFetch<MeditationTrack[]>("/meditation/tracks"),
+
+  getOnboardingState: () =>
+    apiFetch<{
+      onboardingComplete?: boolean;
+      onboardingProgress?: Record<string, unknown> | null;
+      onboardingType?: "quick" | "deep" | null;
+      onboardingResumeAt?: number | null;
+    }>("/onboarding"),
+
+  saveOnboardingPartial: (
+    progress: Record<string, unknown>,
+    type: "quick" | "deep",
+    stepIndex: number,
+  ) =>
+    apiFetch<unknown>("/onboarding/partial", {
+      method: "POST",
+      body: JSON.stringify({ progress, type, stepIndex }),
+    }),
+
+  saveOnboarding: (
+    data: Record<string, unknown>,
+    type: "quick" | "deep",
+  ) =>
+    apiFetch<unknown>("/onboarding", {
+      method: "POST",
+      body: JSON.stringify({ ...data, onboardingType: type }),
+    }),
+
+  saveWentWells: (
+    dailyPlanId: string,
+    items: Array<{ ordinal: number; text: string }>,
+  ) =>
+    apiFetch<unknown>("/planner/daily/went-wells", {
+      method: "PUT",
+      body: JSON.stringify({ dailyPlanId, items }),
+    }),
+
+  suggestGratitude: (context?: { focus?: string; date?: string }) =>
+    apiFetch<{ suggestion?: string; suggestions?: string[]; text?: string }>(
+      "/coach/suggest",
+      {
+        method: "POST",
+        body: JSON.stringify({ type: "gratitude-prompt", context: context || {} }),
+      },
+    ),
+
+  getDailyContent: () =>
+    apiFetch<{
+      greeting?: string;
+      quote?: { text: string; author: string } | null;
+      song?: { title: string; artist: string; reason: string } | null;
+    }>("/daily-content"),
 };
 
 export interface MeditationSession {
@@ -1038,4 +1090,5 @@ export const coachApi = {
       }
     }
   },
+
 };

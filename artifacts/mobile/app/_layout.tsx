@@ -12,6 +12,7 @@ import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { useQuery } from "@tanstack/react-query";
 
 import { AppDrawer } from "@/components/AppDrawer";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -20,6 +21,7 @@ import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { DrawerProvider, useDrawer } from "@/contexts/DrawerContext";
 import { ToastProvider } from "@/contexts/ToastContext";
 import Colors from "@/constants/colors";
+import { api } from "@/lib/api";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -33,10 +35,30 @@ function RootLayoutContent() {
 
   const isSageOpen = segments.includes("sage" as never);
   const isLoginScreen = segments.includes("login" as never);
+  const isOnboarding = segments.includes("onboarding" as never);
   const isJournalScreen =
     segments.includes("journal" as never) ||
     segments.includes("journal-entry" as never);
-  const showOrb = session && !isSageOpen && !isLoginScreen && !isJournalScreen;
+  const showOrb =
+    session && !isSageOpen && !isLoginScreen && !isJournalScreen && !isOnboarding;
+
+  const onboardingQuery = useQuery({
+    queryKey: ["onboarding"],
+    queryFn: api.getOnboardingState,
+    enabled: !!session && !isLoginScreen,
+    retry: 0,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  useEffect(() => {
+    if (!session) return;
+    if (isLoginScreen || isOnboarding) return;
+    const data = onboardingQuery.data;
+    if (!data) return;
+    if (data.onboardingComplete === false) {
+      router.replace("/onboarding");
+    }
+  }, [session, isLoginScreen, isOnboarding, onboardingQuery.data, router]);
 
   return (
     <>
@@ -51,6 +73,7 @@ function RootLayoutContent() {
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding" options={{ headerShown: false }} />
         <Stack.Screen
           name="sage"
           options={{

@@ -1,5 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -1248,6 +1250,11 @@ export default function PlannerScreen() {
     return d;
   });
   const [view, setView] = useState<"day" | "week">("day");
+  const router = useRouter();
+  const [laVisited, setLaVisited] = useState(true);
+  useEffect(() => {
+    AsyncStorage.getItem("everstead-la-visited").then((v) => setLaVisited(v === "1"));
+  }, []);
 
   const dateString = formatDateParam(date);
   const viewingToday = isToday(date);
@@ -1519,6 +1526,22 @@ export default function PlannerScreen() {
               Week
             </Text>
           </Pressable>
+          <Pressable
+            onPress={async () => {
+              haptic();
+              await AsyncStorage.setItem("everstead-la-visited", "1");
+              setLaVisited(true);
+              router.push("/life-architecture");
+            }}
+            style={({ pressed }) => [
+              styles.viewToggleBtn,
+              pressed && { opacity: 0.85 },
+            ]}
+          >
+            <Feather name="target" size={14} color={Colors.textSecondary} />
+            <Text style={styles.viewToggleText}>Year</Text>
+            {!laVisited ? <View style={styles.yearDot} /> : null}
+          </Pressable>
         </View>
 
         <View style={styles.dateNav}>
@@ -1730,6 +1753,15 @@ const styles = StyleSheet.create({
   viewToggleTextActive: {
     fontFamily: "Inter_700Bold",
     color: Colors.dark,
+  },
+  yearDot: {
+    position: "absolute",
+    top: 6,
+    right: 10,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.gold,
   },
   loadingContainer: {
     paddingVertical: 60,
