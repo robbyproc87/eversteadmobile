@@ -1,0 +1,158 @@
+Execute Sprints 2 through 4 to ship Everstead mobile at web parity
+Mission
+Sprint 1 is complete. The mobile app at artifacts/mobile/ has the foundation (auth, Preview Mode, navigation, coach identity, EAS config). It is NOT at feature parity with the web app. Your mission: take the mobile app to full feature parity with the web app, executing Sprints 2, 3, and 4 in sequence without stopping for approval between them.
+You have my full authorization to execute all three sprints end-to-end. Commit per task as before. Report when the entire set is complete, OR halt only if you hit a genuine blocker (not a stylistic question, not a "should I do X or Y" — only if you literally cannot proceed).
+The web app at github.com/robbyproc87/everstead is the canonical source. Use the GitHub MCP to fetch any reference file you need. The reference-for mobile/ folder in the mobile repo also has staged web sources.
+Decisions already locked from prior work — apply without re-asking
+
+Coach colors and identity: Full web parity. Use exact src/lib/coach/coach-definitions.ts values. (Already done in Sprint 1 — do not redo.)
+Year tab in Planner: Add as third pill, routes to /life-architecture screen. Include unread-dot indicator via AsyncStorage everstead-la-visited flag.
+Feature gating: Mirror web src/lib/plan/access.ts PRO_FEATURES exactly: ai_coaching, ai_meditation, life_architecture_edit, unlimited_journal, meditation_metrics, ambient_sounds, cross_coach_reference. Port usePlan hook + UpgradePrompt + TrialNudges from web.
+iOS submission: Deferred to v1.1 (IAP requirement). Leave eas.json iOS placeholders with TODO comment. All work in this prompt is Android-targeted.
+EAS submit: Service account JSON is at artifacts/mobile/google-play-service-account.json (gitignored). DO NOT run eas submit — Play Console app creation is a separate session the user will handle. Your job ends at "code complete, production AAB built, ready to submit."
+
+Architecture and constraints — do not violate
+
+All work in artifacts/mobile/. Do not modify the web app.
+React Native + expo-router + React Query + RN StyleSheet. No NativeWind, no Zustand, no new arch patterns.
+All API calls through lib/api.ts. Do not raw-fetch.
+Sensitive values in expo-secure-store; non-sensitive in AsyncStorage.
+Never commit credentials. Never modify the live google-play-service-account.json.
+TypeScript strict — no any without inline justification.
+Match existing mobile aesthetic from constants/colors.ts. Warm gold + dark + cream. No Tailwind tokens in mobile.
+Per-task commits with messages like mobile: S2.1 port onboarding flow.
+After every sprint, run tsc --noEmit and fix any errors before moving to the next sprint.
+
+Sprint 2 — Onboarding, Today page, Planner restructure
+S2.1 Onboarding flow port
+Web source: src/components/onboarding/OnboardingFlow.tsx + 11 step components in src/components/onboarding/steps/. Port all of them as RN components into artifacts/mobile/components/onboarding/. Create artifacts/mobile/app/onboarding.tsx as the route. After auth in app/_layout.tsx, fetch user profile; if onboardingComplete !== true, route to /onboarding. Wire to existing web endpoints /api/onboarding and /api/onboarding/partial. Support both quick flow (5 steps) and deep flow (10 steps) matching web's QUICK_STEPS / DEEP_STEPS arrays. Include welcome and complete steps.
+S2.2 Today page rebuild
+Rebuild app/(tabs)/index.tsx to match src/components/dashboard/dashboard-content.tsx composition:
+
+DailyBriefingGreeting card with gradient + concentric gold rings + AI-generated daily greeting (calls /api/coach/daily-content, render fallback to getTodayQuote() lib if API fails)
+DailySongCard (daily song + Spotify/Apple Music links from /api/coach/daily-content)
+WeeklyMomentumStrip (5 stat cards: Weekly Score, Journal Streak, Planner Streak, Pages Read, Days Planned — link each to relevant tab)
+YourFocusSection as 3 stacked cards on mobile (not 3 columns): "This Week's Goals" (current week Truly Exceptionals Personal + Professional), "Today's Plan" (Priorities + progress bar + wins badge), "Healthset" (Coming Soon placeholder card matching web)
+OnboardingResumeCard (visible if profile.onboardingType === "partial")
+QuickCapture (Journal, Plan Today, Meditate, +Pages — wire +Pages to the books logger)
+RecentActivity (existing component, keep)
+
+Port supporting lib: src/lib/daily-quotes.ts and src/lib/daily-songs.ts. Create hooks/useDailyContent.ts matching web pattern.
+S2.3 Planner Day View completion
+Modify app/(tabs)/planner.tsx day view to add:
+
+Went Well section (3 slots, save via existing /api/planner/daily/went-wells route, add api.saveWentWells() method)
+Gratitude AI suggest button (Sparkles icon, calls /api/coach/suggest with type: gratitude-prompt, add api.suggestGratitude())
+After-5pm visual highlight on Went Well (green bg tint when local hour >= 17)
+Healthset "Coming Soon" placeholder card (matching web's web placeholder card, no functional integration yet)
+
+S2.4 Planner Week View restructure
+Restructure components/planner/WeekView.tsx:
+
+Convert flat scrolling layout to 4-tab pill navigation: Blueprint / Story / Past TE / Review (matching web PlannerShell.tsx tab structure)
+Add reflection-time gating: Story/Past TE/Review tabs show WeeklyReflectionPlaceholder with "Unlock early" button on weekdays. Use AsyncStorage flag planner_early_unlock_${weekStart} for early unlock state. Saturday/Sunday auto-unlock.
+Port WeeklyFlowIndicator from web showing progress through reflection steps
+Create components/planner/PastWeekExceptionalsView.tsx ported from web's src/components/planner/PastWeekExceptionalsView.tsx. Fetch previous week's review_set TEs, allow editing status + importance with autosave (use existing useAutosave pattern from web, or simple debounced save)
+Existing TrulyExceptionals, WeeklyStory, WeeklyReview components move into their respective tabs
+
+S2.5 Planner Year pill
+Add third pill "Year" to Planner header view-toggle in app/(tabs)/planner.tsx. Tapping it routes to /life-architecture. Show small gold dot indicator on the pill until first tap (AsyncStorage everstead-la-visited flag). Match styles.viewToggleBtn / styles.viewToggleBtnActive for visual consistency.
+End of Sprint 2. Run tsc --noEmit, fix any errors, commit, move to Sprint 3.
+Sprint 3 — Meditation completeness, Journal feature parity
+S3.1 Meditation Generate Session
+Port src/components/meditation/GenerateSessionDialog.tsx as RN modal. Trigger from meditation type cards. Wire to /api/meditation/generate (Zen-personality script → OpenAI TTS audio → Supabase Storage). Add api.generateMeditation({ meditationType, durationS, voice: "nova" }) to lib/api.ts. Show pulsing-orb generation state (~30s wait). Refresh ["meditation", "generated"] query on success. Gate behind canAccess("ai_meditation") — see S4.5.
+S3.2 Meditation Pre-session check-in
+Port src/components/meditation/PreSessionCheckIn.tsx as RN overlay modal with tension + stress sliders (1-10). Show before timer starts (when user taps "Start Session"). On "Begin", store tensionBefore + stressBefore in session state, dismiss modal, start timer. Gate behind canAccess("meditation_metrics").
+S3.3 Meditation Post-session review
+Port src/components/meditation/PostSessionReview.tsx as RN bottom sheet. 5 steps: Attention Quality, Difficulty Relationship, Embodied State, Insight, Summary. Match the web's exact step structure including attention labels array, insight labels array, shift arrows for tension/stress before-after comparison. Trigger on timer completion. Wire to /api/meditation/sessions PATCH to save quality metrics. Gate behind canAccess("meditation_metrics").
+S3.4 Daily mindfulness check-in
+Port src/components/meditation/DailyCheckIn.tsx as RN card at top of meditation tab. Awareness rating (1-5 button row) + Wellbeing rating (1-10 slider). Wire to /api/meditation/daily-checkin (existing route). Show "Completed" state with edit affordance once done for the day.
+S3.5 Journal template picker
+Port src/components/journal/template-picker.tsx + src/lib/journal/templates.ts to mobile. Port the 4 templates (Blank, Morning Reflection, Evening Review, Brain Dump) as Tiptap-compatible doc structures. Show TemplatePicker modal on new entry tap (unless default template is set). Pre-fill the entry's contentRich from selected template doc. Pass templateId through to entry save.
+S3.6 Journal AI prompt card
+Port src/components/journal/journal-ai-prompt-card.tsx as RN component. Show as toolbar chip in journal editor. On tap, call /api/journal/prompt (existing route) with mood + templateId context. Display result inline with dismiss button. Gate behind canAccess("ai_coaching").
+S3.7 Journal voice recording
+Add voice recording to journal entry editor. Use expo-av (already in deps) for Audio.Recording. Two modes:
+
+VTT mode: only enabled in Type mode, uses expo-speech or fallback to record-then-transcribe via Whisper
+Recording mode: record audio with timer display, on stop POST to /api/journal/[id]/media?action=upload then confirm, then call /api/journal/[id]/audio-transcribe to get transcript
+
+Add api.transcribeAudio(entryId, mediaId) to lib/api.ts. Render audio media items in entry view with play button + transcribe button (matching web's AudioMediaItem component pattern).
+S3.8 Journal media attachments
+Add photo attachment to journal. Use expo-image-picker (already in deps) for camera + library. Implement signed-upload flow matching web:
+
+POST /api/journal/[id]/media?action=upload with mime type → receive path + token
+Upload to Supabase Storage using signed URL
+POST /api/journal/[id]/media?action=confirm to finalize
+
+Render media grid in entry view. Support viewing all journal media in a "Photos" view at app/(tabs)/journal.tsx — add as a third tab in journal nav alongside existing list/calendar views. Port simplified version of src/components/journal/media-grid.tsx for the Photos view (month grouping, lightbox, infinite scroll).
+S3.9 Journal PDF export
+Add PDF export button to entry view toolbar (matching web's Download icon button). Use expo-print + expo-sharing (add to deps if not present). Render entry to PDF matching web's layout: title, date, mood, tags, separator, content, handwritten-entry marker if canvas-only, Everstead footer. Trigger Share sheet on completion so user can save/email/airdrop.
+End of Sprint 3. Run tsc --noEmit, fix any errors, commit, move to Sprint 4.
+Sprint 4 — Sage polish, feature gating, trial nudges, final build
+S4.1 Sage CoachIntroFlow
+Port src/components/coach/CoachIntroFlow.tsx as RN bottom sheet. Show on first Sage screen load if AsyncStorage flag everstead_coach_intro_seen is not set. Step 0: "Meet your coaching team" with all 5 orbs. Steps 1-5: one per coach with name, title, description, domains chips. Mark everstead_coach_intro_seen = "true" on completion.
+S4.2 Sage CoachActionBadge inline
+Modify app/sage.tsx to render coach actions inline with messages. When streaming chunks arrive with chunk.action, append the action to the assistant message's action list. Render components/coach/CoachActionBadge.tsx (port from web) inside each assistant message bubble below the text. Badge shows success/failure icon + message + navigate-to chevron. On tap, router.push(action.navigateTo).
+S4.3 Sage CoachSettingsPanel
+Port src/components/coach/CoachSettingsPanel.tsx as RN modal. Triggered from header gear icon on Sage screen. Wire to /api/coach/settings GET/PUT. Proactivity slider (0-100, range input, show contextual label) + 5 data-access toggles (journal, planner, meditation, books, mood). Footer privacy text about data not training models. Add coachApi.getSettings() and coachApi.saveSettings() to lib/api.ts.
+S4.4 NudgeToast at root
+Port src/components/coach/NudgeToast.tsx as RN component. Mount at root in app/_layout.tsx. On every route change (use usePathname()), wait 3s then fetch /api/coach/nudge?page={pageName}. Map pathname → page name matching web's pattern. Run evaluateNudges() against response context + proactivity level. Render toast as RN modal/floating card at bottom-right (above tab bar) with coach orb + message + dismiss button. Auto-dismiss after 15s. Skip showing on /sage route. Port web's src/lib/coach/nudge-engine.ts (the evaluation logic).
+S4.5 Feature gating layer
+Port src/hooks/usePlan.ts to artifacts/mobile/hooks/usePlan.ts. Identical PRO_FEATURES array and canAccess(feature) logic. Backed by React Query against /api/billing/status with staleTime: 5 * 60 * 1000.
+Port src/components/plan/UpgradePrompt.tsx to components/UpgradePrompt.tsx. Compact + full variants. Promo code field. Upgrade button opens https://my.everstead.app/billing/checkout via expo-web-browser.
+In lib/api.ts apiFetch, add PaymentRequiredError subclass of ApiError (parallel to PreviewAuthError). Throw it on 402 responses. Add isPaymentRequiredError(err) helper.
+Apply gates to:
+
+Sage chat input (ai_coaching) — disable input + show inline UpgradePrompt for free users
+Life Architecture create/edit (life_architecture_edit) — already partially gated in web GuidedFlow.tsx, mirror
+Journal AI prompt card (ai_coaching)
+Journal entry creation when monthly count >= 30 (unlimited_journal)
+Meditation Generate Session (ai_meditation)
+Meditation Pre/Post check-ins (meditation_metrics)
+Ambient sound selection beyond first track (ambient_sounds)
+
+S4.6 TrialNudges at root
+Port src/components/plan/TrialNudges.tsx as RN component. Mount at root in app/_layout.tsx. Logic:
+
+Day 0 (trial_welcome flag): Welcome modal with feature list + "Start Exploring" CTA
+Days 7-5 remaining: Toast notification once via AsyncStorage flag
+Days 2-0 remaining: Persistent banner at top of screens until dismissed
+After trial expiry (isFree + past trialEndsAt): Expiry modal with upgrade CTA + "Continue with free plan" dismiss
+
+Use AsyncStorage for all the dismissal flags matching web's localStorage key names but prefixed appropriately for RN.
+S4.7 Asset verification
+Run npx expo-doctor and address any flagged issues. Verify:
+
+assets/images/icon.png is 1024×1024 PNG no alpha
+assets/images/adaptive-icon.png is 1024×1024 transparent foreground
+assets/images/splash.png is 1242×2436 or appropriately sized
+Android adaptive icon background color matches brand
+iOS placeholder is fine (deferred per Decision 4)
+
+If any asset is missing or wrong size, flag in final report and use existing assets as fallback. Don't block.
+S4.8 Final production build
+Run eas build --profile production --platform android. Do not run submit. Surface the build URL when complete.
+End of Sprint 4. Run final tsc --noEmit, fix errors. Commit. Halt.
+Final report when all done
+When all of Sprints 2, 3, and 4 are complete, write a final summary with:
+
+Total commits
+Final production AAB build URL
+Any features that landed differently than spec (drift), with reason
+Anything that's still missing vs web with explicit reason why
+Any new dependencies added to package.json
+TypeScript clean status
+Estimated total agent runtime
+
+Then halt and wait for me. Do not start anything new. Do not propose further tasks. Just report and stand by.
+Hard rules
+
+Don't ask me clarifying questions mid-execution unless you're literally blocked (file you need doesn't exist, API endpoint you expected doesn't exist, etc.). Reasonable defaults: take them. Style ambiguity: pick something that matches existing mobile patterns.
+Don't run eas submit. Ever. The user handles Play Console submission manually.
+Don't touch the live google-play-service-account.json.
+Don't modify the web app codebase.
+Don't propose any background project tasks. Execute in main agent.
+Per-task commits. After every sprint, typecheck.
+
+Now go
