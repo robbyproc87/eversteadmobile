@@ -26,6 +26,10 @@ import { usePlan } from "@/lib/plan";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import DailyMindfulnessCheckin from "@/components/meditation/DailyMindfulnessCheckin";
 import GenerateSessionDialog from "@/components/meditation/GenerateSessionDialog";
+import PreSessionCheckin from "@/components/meditation/PreSessionCheckin";
+import PostSessionReview, {
+  type PostSessionMetrics,
+} from "@/components/meditation/PostSessionReview";
 import { supabase } from "@/lib/supabase";
 import { MenuIcon } from "@/components/MenuIcon";
 import { PreviewEmptyState } from "@/components/PreviewEmptyState";
@@ -100,12 +104,16 @@ export default function MeditationScreen() {
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const [ambientUpgradeOpen, setAmbientUpgradeOpen] = useState(false);
   const plan = usePlan();
-  const [showRatingPrompt, setShowRatingPrompt] = useState(false);
   const [pendingDurationS, setPendingDurationS] = useState(0);
-  const [ratingForSession, setRatingForSession] = useState<{
-    sessionId: string;
-    rating: number;
-  } | null>(null);
+  const [preCheckinOpen, setPreCheckinOpen] = useState(false);
+  const [postReviewOpen, setPostReviewOpen] = useState(false);
+  const [reviewSessionId, setReviewSessionId] = useState<string | null>(null);
+  const [tensionBefore, setTensionBefore] = useState<number | null>(null);
+  const [stressBefore, setStressBefore] = useState<number | null>(null);
+  const checkinRef = useRef<{ tensionBefore: number | null; stressBefore: number | null }>({
+    tensionBefore: null,
+    stressBefore: null,
+  });
 
   const sessionsQuery = useQuery({
     queryKey: ["meditation", "sessions"],
@@ -118,14 +126,20 @@ export default function MeditationScreen() {
   });
 
   const createSession = useMutation({
-    mutationFn: (input: { durationS: number; rating?: number }) =>
-      api.createMeditationSession(input),
+    mutationFn: (input: {
+      durationS: number;
+      rating?: number;
+      tensionBefore?: number;
+      stressBefore?: number;
+    }) => api.createMeditationSession(input),
     onSuccess: (sess) => {
       queryClient.invalidateQueries({ queryKey: ["meditation", "sessions"] });
       showToast("Session logged");
       if (sess?.id) {
-        setRatingForSession({ sessionId: sess.id, rating: 0 });
-        setShowRatingPrompt(true);
+        setReviewSessionId(sess.id);
+        if (plan.isPro) {
+          setPostReviewOpen(true);
+        }
       }
     },
     onError: () => {
@@ -138,6 +152,23 @@ export default function MeditationScreen() {
       api.rateMeditationSession(id, rating),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["meditation", "sessions"] });
+    },
+  });
+
+  const updateReview = useMutation({
+    mutationFn: ({ id, metrics }: { id: string; metrics: PostSessionMetrics }) =>
+      api.updateMeditationSession(id, metrics),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["meditation", "sessions"] });
+      showToast("Review saved");
+      setPostReviewOpen(false);
+      setReviewSessionId(null);
+      setTensionBefore(null);
+      setStressBefore(null);
+      checkinRef.current = { tensionBefore: null, stressBefore: null };
+    },
+    onError: () => {
+      showToast("Failed to save review", { variant: "error" });
     },
   });
 
@@ -255,12 +286,18 @@ export default function MeditationScreen() {
         return;
       }
       setPendingDurationS(durationS);
-      createSession.mutate({ durationS });
+      const tb = checkinRef.current.tensionBefore;
+      const sb = checkinRef.current.stressBefore;
+      createSession.mutate({
+        durationS,
+        ...(tb != null ? { tensionBefore: tb } : {}),
+        ...(sb != null ? { stressBefore: sb } : {}),
+      });
     },
     [clearTimerInterval, createSession, showToast, stopAmbient],
   );
 
-  const handleStart = useCallback(() => {
+  const beginTimer = useCallback(() => {
     if (Platform.OS !== "web") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
@@ -278,9 +315,14 @@ export default function MeditationScreen() {
           setIsTimerActive(false);
           stopAmbient();
           deactivateKeepAwake().catch(() => {});
-          // log full duration
           setPendingDurationS(selectedDuration);
-          createSession.mutate({ durationS: selectedDuration });
+          const tb = checkinRef.current.tensionBefore;
+          const sb = checkinRef.current.stressBefore;
+          createSession.mutate({
+            durationS: selectedDuration,
+            ...(tb != null ? { tensionBefore: tb } : {}),
+            ...(sb != null ? { stressBefore: sb } : {}),
+          });
           return selectedDuration;
         }
         return next;
@@ -293,6 +335,13 @@ export default function MeditationScreen() {
     startAmbient,
     stopAmbient,
   ]);
+
+  const handleStart = useCallback(() => {
+    if (Platform.OS !== "web") {
+      Haptics.selectionAsync();
+    }
+    setPreCheckinOpen(true);
+  }, []);
 
   const handlePause = useCallback(() => {
     if (Platform.OS !== "web") {
@@ -319,7 +368,13 @@ export default function MeditationScreen() {
           stopAmbient();
           deactivateKeepAwake().catch(() => {});
           setPendingDurationS(selectedDuration);
-          createSession.mutate({ durationS: selectedDuration });
+          const tb = checkinRef.current.tensionBefore;
+          const sb = checkinRef.current.stressBefore;
+          createSession.mutate({
+            durationS: selectedDuration,
+            ...(tb != null ? { tensionBefore: tb } : {}),
+            ...(sb != null ? { stressBefore: sb } : {}),
+          });
           return selectedDuration;
         }
         return next;
@@ -356,28 +411,6 @@ export default function MeditationScreen() {
       }
     },
     [bgVolume, isTimerActive, loadAmbient, stopAmbient],
-  );
-
-  const handleRatingSelect = useCallback(
-    (rating: number) => {
-      if (!ratingForSession) return;
-      if (!plan.isPro) {
-        setShowRatingPrompt(false);
-        setRatingForSession(null);
-        setAmbientUpgradeOpen(true);
-        return;
-      }
-      if (Platform.OS !== "web") {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      }
-      updateRating.mutate({ id: ratingForSession.sessionId, rating });
-      setRatingForSession({ ...ratingForSession, rating });
-      setTimeout(() => {
-        setShowRatingPrompt(false);
-        setRatingForSession(null);
-      }, 600);
-    },
-    [ratingForSession, updateRating, plan.isPro],
   );
 
   const handleRateRecent = useCallback(
@@ -827,62 +860,36 @@ export default function MeditationScreen() {
         </View>
       </Modal>
 
-      {/* Post-session rating modal */}
-      <Modal
-        transparent
-        visible={showRatingPrompt}
-        animationType="fade"
-        onRequestClose={() => setShowRatingPrompt(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalIconWrap}>
-              <Feather name="check" size={28} color={Colors.gold} />
-            </View>
-            <Text style={styles.modalTitle}>Session complete</Text>
-            <Text style={styles.modalSubtitle}>
-              {Math.max(1, Math.round(pendingDurationS / 60))} minute
-              {Math.round(pendingDurationS / 60) === 1 ? "" : "s"} of
-              meditation. How was it?
-            </Text>
-            <View style={styles.modalStarRow}>
-              {[1, 2, 3, 4, 5].map((n) => (
-                <Pressable
-                  key={n}
-                  onPress={() => handleRatingSelect(n)}
-                  hitSlop={8}
-                  style={({ pressed }) => [
-                    styles.modalStarButton,
-                    pressed && { opacity: 0.6 },
-                  ]}
-                >
-                  <Feather
-                    name="star"
-                    size={32}
-                    color={
-                      (ratingForSession?.rating ?? 0) >= n
-                        ? Colors.gold
-                        : Colors.cardBorder
-                    }
-                  />
-                </Pressable>
-              ))}
-            </View>
-            <Pressable
-              onPress={() => {
-                setShowRatingPrompt(false);
-                setRatingForSession(null);
-              }}
-              style={({ pressed }) => [
-                styles.modalSkipButton,
-                pressed && { opacity: 0.6 },
-              ]}
-            >
-              <Text style={styles.modalSkipText}>Skip</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+      <PreSessionCheckin
+        visible={preCheckinOpen}
+        onCancel={() => setPreCheckinOpen(false)}
+        onComplete={({ tensionBefore: tb, stressBefore: sb }) => {
+          checkinRef.current = { tensionBefore: tb, stressBefore: sb };
+          setTensionBefore(tb);
+          setStressBefore(sb);
+          setPreCheckinOpen(false);
+          beginTimer();
+        }}
+      />
+
+      <PostSessionReview
+        visible={postReviewOpen && !!reviewSessionId}
+        durationS={pendingDurationS}
+        tensionBefore={tensionBefore}
+        stressBefore={stressBefore}
+        isSaving={updateReview.isPending}
+        onSkip={() => {
+          setPostReviewOpen(false);
+          setReviewSessionId(null);
+          setTensionBefore(null);
+          setStressBefore(null);
+          checkinRef.current = { tensionBefore: null, stressBefore: null };
+        }}
+        onComplete={(metrics) => {
+          if (!reviewSessionId) return;
+          updateReview.mutate({ id: reviewSessionId, metrics });
+        }}
+      />
     </View>
   );
 }

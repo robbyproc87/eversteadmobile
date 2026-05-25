@@ -20,6 +20,7 @@ import { useDrawer } from "@/contexts/DrawerContext";
 import { useToast } from "@/contexts/ToastContext";
 import { MenuIcon } from "@/components/MenuIcon";
 import { PreviewEmptyState } from "@/components/PreviewEmptyState";
+import PhotosView from "@/components/journal/PhotosView";
 import {
   api,
   ApiError,
@@ -138,6 +139,7 @@ export default function JournalScreen() {
 
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [tab, setTab] = useState<"entries" | "photos">("entries");
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchInput.trim()), 300);
@@ -238,30 +240,68 @@ export default function JournalScreen() {
         <View style={styles.headerBtn} />
       </View>
 
-      <View style={styles.searchWrap}>
-        <View style={styles.searchInner}>
-          <Feather name="search" size={16} color={Colors.textSecondary} />
-          <TextInput
-            value={searchInput}
-            onChangeText={setSearchInput}
-            placeholder="Search entries"
-            placeholderTextColor={Colors.textTertiary}
-            style={styles.searchInput}
-            returnKeyType="search"
-          />
-          {searchInput.length > 0 ? (
+      <View style={styles.tabRow}>
+        {(["entries", "photos"] as const).map((t) => {
+          const active = tab === t;
+          return (
             <Pressable
-              onPress={() => setSearchInput("")}
-              hitSlop={8}
-              style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+              key={t}
+              onPress={() => {
+                haptic();
+                setTab(t);
+              }}
+              style={({ pressed }) => [
+                styles.tabPill,
+                active && styles.tabPillActive,
+                pressed && { opacity: 0.85 },
+              ]}
             >
-              <Feather name="x" size={16} color={Colors.textSecondary} />
+              <Feather
+                name={t === "entries" ? "book" : "image"}
+                size={13}
+                color={active ? Colors.dark : Colors.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.tabPillText,
+                  active && styles.tabPillTextActive,
+                ]}
+              >
+                {t === "entries" ? "Entries" : "Photos"}
+              </Text>
             </Pressable>
-          ) : null}
-        </View>
+          );
+        })}
       </View>
 
-      {entriesQuery.isLoading ? (
+      {tab === "entries" ? (
+        <View style={styles.searchWrap}>
+          <View style={styles.searchInner}>
+            <Feather name="search" size={16} color={Colors.textSecondary} />
+            <TextInput
+              value={searchInput}
+              onChangeText={setSearchInput}
+              placeholder="Search entries"
+              placeholderTextColor={Colors.textTertiary}
+              style={styles.searchInput}
+              returnKeyType="search"
+            />
+            {searchInput.length > 0 ? (
+              <Pressable
+                onPress={() => setSearchInput("")}
+                hitSlop={8}
+                style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+              >
+                <Feather name="x" size={16} color={Colors.textSecondary} />
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
+
+      {tab === "photos" ? (
+        <PhotosView bottomInset={insets.bottom + 96} />
+      ) : entriesQuery.isLoading ? (
         <View style={styles.loadingBox}>
           <ActivityIndicator size="large" color={Colors.gold} />
         </View>
@@ -381,6 +421,37 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_700Bold",
     color: Colors.dark,
     textAlign: "center",
+  },
+  tabRow: {
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 20,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  tabPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+  },
+  tabPillActive: {
+    backgroundColor: Colors.gold,
+    borderColor: Colors.gold,
+  },
+  tabPillText: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    color: Colors.textSecondary,
+  },
+  tabPillTextActive: {
+    color: Colors.dark,
+    fontFamily: "Inter_700Bold",
   },
   searchWrap: {
     paddingHorizontal: 20,

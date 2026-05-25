@@ -45,7 +45,11 @@ import {
   type ToolKind,
 } from "@/components/journal/InkPad";
 import TemplatePicker from "@/components/journal/TemplatePicker";
+import VoiceRecorder from "@/components/journal/VoiceRecorder";
+import PhotoAttachments from "@/components/journal/PhotoAttachments";
 import { type JournalTemplate } from "@/lib/journal-templates";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
 
 type EditorMode = "type" | "write";
 
@@ -220,12 +224,14 @@ function ReadOnlyView({
   onEdit,
   onUnlockAndEdit,
   onDelete,
+  onExportPdf,
 }: {
   entry: JournalEntry;
   isLocked: boolean;
   onEdit: () => void;
   onUnlockAndEdit: () => void;
   onDelete: () => void;
+  onExportPdf: () => void;
 }) {
   const mood = getMoodOption(entry.mood);
   const text = entry.contentPlainText || entry.content || "";
@@ -282,6 +288,8 @@ function ReadOnlyView({
         )}
       </View>
 
+      <PhotoAttachments entryId={entry.id} readOnly />
+
       <View style={styles.viewActions}>
         <Pressable
           onPress={isLocked ? onUnlockAndEdit : onEdit}
@@ -298,6 +306,16 @@ function ReadOnlyView({
           <Text style={styles.primaryBtnText}>
             {isLocked ? "Unlock & edit" : "Edit entry"}
           </Text>
+        </Pressable>
+        <Pressable
+          onPress={onExportPdf}
+          style={({ pressed }) => [
+            styles.secondaryBtn,
+            pressed && { opacity: 0.85 },
+          ]}
+        >
+          <Feather name="download" size={16} color={Colors.dark} />
+          <Text style={styles.secondaryBtnText}>Export PDF</Text>
         </Pressable>
         <Pressable
           onPress={onDelete}
@@ -703,6 +721,97 @@ export default function JournalEntryScreen() {
     );
   }, [deleteMutation]);
 
+  const saveAndGetId = useCallback(async (): Promise<string | null> => {
+    if (isSaving) return null;
+    const payload = buildPayload();
+    try {
+      if (isNew) {
+        const created = await api.createJournalEntry(payload);
+        queryClient.invalidateQueries({ queryKey: ["journal", "list"] });
+        queryClient.setQueryData(["journal", "entry", created.id], created);
+        router.replace(`/journal-entry?id=${encodeURIComponent(created.id)}`);
+        return created.id;
+      }
+      const body: JournalEntryInput & { forceUnlock?: boolean } = { ...payload };
+      if (isLocked) body.forceUnlock = true;
+      const updated = await api.updateJournalEntry(idParam, body);
+      queryClient.setQueryData(["journal", "entry", idParam], updated);
+      queryClient.invalidateQueries({ queryKey: ["journal", "list"] });
+      return updated.id;
+    } catch (err) {
+      const msg =
+        err instanceof ApiError ? err.message : "Couldn't save your entry.";
+      showError(msg);
+      return null;
+    }
+  }, [isSaving, buildPayload, isNew, isLocked, idParam, queryClient, router, showError]);
+
+  const handleExportPdf = useCallback(async () => {
+    if (!entry) return;
+    try {
+      haptic();
+      const escapeHtml = (s: string) =>
+        s
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      const moodOpt = getMoodOption(entry.mood);
+      const titleText = entry.title?.trim() || "Untitled entry";
+      const dateText = `${formatLongDate(entry.createdAt)} · ${formatLongTime(entry.createdAt)}`;
+      const bodyText = entry.contentPlainText || entry.content || "";
+      const tagsHtml =
+        entry.tags && entry.tags.length > 0
+          ? `<div class="tags">${entry.tags
+              .map((t) => `<span class="tag">${escapeHtml(t)}</span>`)
+              .join(" ")}</div>`
+          : "";
+      const moodHtml = moodOpt
+        ? `<span class="mood">${moodOpt.emoji} ${escapeHtml(moodOpt.label)}</span>`
+        : "";
+
+      const html = `<!doctype html><html><head><meta charset="utf-8"/>
+<title>${escapeHtml(titleText)}</title>
+<style>
+  @page { margin: 48px; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; color: #1a1a1a; line-height: 1.5; }
+  h1 { font-size: 28px; margin: 0 0 8px; }
+  .date { color: #8a8a8a; font-size: 13px; margin-bottom: 18px; }
+  .meta { margin-bottom: 18px; }
+  .mood { display: inline-block; padding: 4px 10px; border-radius: 999px; background: #faf0d4; color: #1a1a1a; font-size: 12px; margin-right: 8px; }
+  .tags { margin: 10px 0 18px; }
+  .tag { display: inline-block; padding: 3px 9px; border-radius: 999px; background: #faf0d4; color: #6b5826; font-size: 11px; margin-right: 6px; }
+  .body { font-size: 14px; white-space: pre-wrap; }
+  hr { border: none; border-top: 1px solid #f0ede6; margin: 18px 0; }
+  .footer { margin-top: 36px; color: #b0b0b0; font-size: 10px; text-align: center; }
+</style></head><body>
+  <h1>${escapeHtml(titleText)}</h1>
+  <div class="date">${escapeHtml(dateText)}</div>
+  <div class="meta">${moodHtml}</div>
+  ${tagsHtml}
+  <hr/>
+  <div class="body">${escapeHtml(bodyText) || "<em style=\"color:#b0b0b0\">No content</em>"}</div>
+  <div class="footer">Exported from Everstead</div>
+</body></html>`;
+
+      const { uri } = await Print.printToFileAsync({ html });
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(uri, {
+          mimeType: "application/pdf",
+          dialogTitle: titleText,
+          UTI: "com.adobe.pdf",
+        });
+      } else {
+        showSuccess(`PDF saved: ${uri}`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Couldn't export PDF.";
+      showError(msg);
+    }
+  }, [entry, showError, showSuccess]);
+
   const handleBack = useCallback(() => {
     if (mode === "edit" && !isNew) {
       setMode("view");
@@ -806,6 +915,7 @@ export default function JournalEntryScreen() {
             }}
             onUnlockAndEdit={confirmUnlockAndEdit}
             onDelete={confirmDelete}
+            onExportPdf={handleExportPdf}
           />
         ) : (
           <View style={styles.editorStack}>
@@ -901,6 +1011,25 @@ export default function JournalEntryScreen() {
 
                 <Text style={styles.sectionLabel}>Tags</Text>
                 <TagEditor tags={tags} onChange={setTags} />
+
+                <View style={styles.mediaToolbar}>
+                  <VoiceRecorder
+                    entryId={isNew ? null : idParam}
+                    disabled={isSaving}
+                    onRequireSaveFirst={saveAndGetId}
+                    onTranscribed={(text) => {
+                      setBody((prev) => {
+                        const trimmed = prev.trimEnd();
+                        const sep = trimmed.length > 0 ? "\n\n" : "";
+                        return `${trimmed}${sep}${text}`;
+                      });
+                    }}
+                  />
+                  <PhotoAttachments
+                    entryId={isNew ? null : idParam}
+                    onRequireSaveFirst={saveAndGetId}
+                  />
+                </View>
 
                 <View style={styles.thoughtsHeader}>
                   <Text style={styles.sectionLabel}>Your thoughts</Text>
@@ -1411,6 +1540,13 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_600SemiBold",
     color: Colors.goldDark,
   },
+  mediaToolbar: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 16,
+    flexWrap: "wrap",
+    alignItems: "center",
+  },
   bodyInput: {
     minHeight: 240,
     fontSize: 15,
@@ -1507,6 +1643,22 @@ const styles = StyleSheet.create({
   primaryBtnText: {
     fontSize: 14,
     fontFamily: "Inter_700Bold",
+    color: Colors.dark,
+  },
+  secondaryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    backgroundColor: Colors.card,
+  },
+  secondaryBtnText: {
+    fontSize: 14,
+    fontFamily: "Inter_500Medium",
     color: Colors.dark,
   },
   dangerBtn: {
