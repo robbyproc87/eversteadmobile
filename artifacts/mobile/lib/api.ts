@@ -617,8 +617,8 @@ export const api = {
     }>(`/journal/media${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`),
 
   deleteJournalMedia: (entryId: string, mediaId: string) =>
-    apiFetch<{ ok: true }>(
-      `/journal/${encodeURIComponent(entryId)}/media?mediaId=${encodeURIComponent(mediaId)}`,
+    apiFetch<{ success: true }>(
+      `/journal/${encodeURIComponent(entryId)}/media/${encodeURIComponent(mediaId)}`,
       { method: "DELETE" },
     ),
 
