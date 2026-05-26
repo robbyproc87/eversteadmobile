@@ -16,6 +16,7 @@ import {
 import Colors from "@/constants/colors";
 import { useToast } from "@/contexts/ToastContext";
 import { api, ApiError } from "@/lib/api";
+import PhotoLightbox from "@/components/journal/PhotoLightbox";
 
 interface PhotoAttachmentsProps {
   entryId: string | null;
@@ -49,6 +50,7 @@ export default function PhotoAttachments({
   const { showError, showSuccess } = useToast();
   const queryClient = useQueryClient();
   const [uploading, setUploading] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   const mediaQuery = useQuery({
     queryKey: ["journal", "media", entryId ?? "new"],
@@ -110,6 +112,23 @@ export default function PhotoAttachments({
     }
   }, [entryId, onRequireSaveFirst, queryClient, showError, showSuccess]);
 
+  const handleDeletePhoto = useCallback(
+    async (mediaId: string) => {
+      if (!entryId) return;
+      try {
+        await api.deleteJournalMedia(entryId, mediaId);
+        queryClient.invalidateQueries({ queryKey: ["journal", "media", entryId] });
+        queryClient.invalidateQueries({ queryKey: ["journal", "media-all"] });
+        showSuccess("Photo removed");
+        setLightboxIndex(null);
+      } catch (err) {
+        const msg = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Couldn't remove photo.";
+        showError(msg);
+      }
+    },
+    [entryId, queryClient, showError, showSuccess],
+  );
+
   const renderGrid = () => {
     if (mediaQuery.isLoading) {
       return <ActivityIndicator color={Colors.gold} style={{ marginVertical: 12 }} />;
@@ -121,8 +140,16 @@ export default function PhotoAttachments({
     }
     return (
       <View style={styles.grid}>
-        {photos.map((p) => (
-          <View key={p.id} style={styles.thumbWrap}>
+        {photos.map((p, idx) => (
+          <Pressable
+            key={p.id}
+            onPress={() => setLightboxIndex(idx)}
+            accessibilityLabel="Open photo"
+            style={({ pressed }) => [
+              styles.thumbWrap,
+              pressed && { opacity: 0.85 },
+            ]}
+          >
             {p.signedUrl ? (
               <Image
                 source={{ uri: p.signedUrl }}
@@ -134,11 +161,21 @@ export default function PhotoAttachments({
                 <Feather name="image" size={20} color={Colors.textTertiary} />
               </View>
             )}
-          </View>
+          </Pressable>
         ))}
       </View>
     );
   };
+
+  const lightbox = (
+    <PhotoLightbox
+      visible={lightboxIndex !== null}
+      photos={photos.map((p) => ({ id: p.id, signedUrl: p.signedUrl }))}
+      initialIndex={lightboxIndex ?? 0}
+      onClose={() => setLightboxIndex(null)}
+      onDelete={readOnly ? undefined : (photo) => handleDeletePhoto(photo.id)}
+    />
+  );
 
   if (readOnly) {
     if (!entryId) return null;
@@ -148,6 +185,7 @@ export default function PhotoAttachments({
       <View style={styles.readWrap}>
         <Text style={styles.sectionLabel}>Photos</Text>
         {renderGrid()}
+        {lightbox}
       </View>
     );
   }
@@ -176,6 +214,7 @@ export default function PhotoAttachments({
         </Text>
       </Pressable>
       {entryId ? renderGrid() : null}
+      {lightbox}
     </View>
   );
 }

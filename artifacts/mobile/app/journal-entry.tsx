@@ -588,6 +588,10 @@ export default function JournalEntryScreen() {
       }
     },
     onError: (err) => {
+      if (isPaymentRequiredError(err)) {
+        setUpgradeOpen(true);
+        return;
+      }
       const msg =
         err instanceof ApiError
           ? err.message
@@ -614,6 +618,10 @@ export default function JournalEntryScreen() {
       setMode("view");
     },
     onError: (err) => {
+      if (isPaymentRequiredError(err)) {
+        setUpgradeOpen(true);
+        return;
+      }
       const msg =
         err instanceof ApiError
           ? err.message

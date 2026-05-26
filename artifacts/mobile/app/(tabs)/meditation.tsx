@@ -25,6 +25,7 @@ import type { GeneratedMeditation, MeditationSession } from "@/lib/api";
 import { usePlan } from "@/lib/plan";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import DailyMindfulnessCheckin from "@/components/meditation/DailyMindfulnessCheckin";
+import TrendsChart from "@/components/meditation/TrendsChart";
 import GenerateSessionDialog from "@/components/meditation/GenerateSessionDialog";
 import PreSessionCheckin from "@/components/meditation/PreSessionCheckin";
 import PostSessionReview, {
@@ -756,6 +757,17 @@ export default function MeditationScreen() {
             </View>
           )}
         </View>
+
+        {/* Trends (Pro) */}
+        {plan.isPro ? (
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <Feather name="trending-up" size={18} color={Colors.gold} />
+              <Text style={styles.cardTitle}>Trends</Text>
+            </View>
+            <TrendsChart sessions={sessions} />
+          </View>
+        ) : null}
 
         {/* Recent Sessions */}
         <View style={styles.card}>

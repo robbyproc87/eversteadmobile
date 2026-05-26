@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import { useQueryClient } from "@tanstack/react-query";
 import * as WebBrowser from "expo-web-browser";
 import React, { useState } from "react";
 import {
@@ -11,6 +12,7 @@ import {
 } from "react-native";
 
 import Colors from "@/constants/colors";
+import { api, type BillingStatus } from "@/lib/api";
 import { CHECKOUT_URL } from "@/lib/plan";
 
 interface Props {
@@ -28,6 +30,7 @@ export function UpgradePrompt({
 }: Props) {
   const [promo, setPromo] = useState("");
   const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
 
   async function handleUpgrade() {
     setLoading(true);
@@ -35,8 +38,28 @@ export function UpgradePrompt({
       const url = promo.trim()
         ? `${CHECKOUT_URL}?promo=${encodeURIComponent(promo.trim())}`
         : CHECKOUT_URL;
-      const result = await WebBrowser.openBrowserAsync(url);
-      if (result.type === "dismiss" || result.type === "cancel") {
+      await WebBrowser.openBrowserAsync(url);
+      let nextBilling: BillingStatus | undefined;
+      try {
+        nextBilling = await queryClient.fetchQuery<BillingStatus>({
+          queryKey: ["billing", "status"],
+          queryFn: api.getBillingStatus,
+          staleTime: 0,
+        });
+      } catch {
+        nextBilling = undefined;
+      }
+      const plan = (nextBilling?.plan ?? "free").toLowerCase();
+      const trialEndsAt = nextBilling?.trialEndsAt ?? null;
+      const trialActive =
+        !!trialEndsAt && new Date(trialEndsAt).getTime() > Date.now();
+      const isPro =
+        plan === "pro" ||
+        plan === "premium" ||
+        nextBilling?.active === true ||
+        plan === "trial" ||
+        trialActive;
+      if (isPro) {
         onSuccess?.();
       }
     } catch {

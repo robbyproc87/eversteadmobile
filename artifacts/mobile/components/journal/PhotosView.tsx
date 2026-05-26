@@ -1,8 +1,7 @@
 import { Feather } from "@expo/vector-icons";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
-import { useRouter } from "expo-router";
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -15,7 +14,9 @@ import {
 } from "react-native";
 
 import Colors from "@/constants/colors";
-import { api } from "@/lib/api";
+import { useToast } from "@/contexts/ToastContext";
+import { api, ApiError } from "@/lib/api";
+import PhotoLightbox from "@/components/journal/PhotoLightbox";
 
 const COLUMNS = 3;
 const GUTTER = 6;
@@ -25,7 +26,9 @@ interface PhotosViewProps {
 }
 
 export default function PhotosView({ bottomInset = 0 }: PhotosViewProps) {
-  const router = useRouter();
+  const queryClient = useQueryClient();
+  const { showError, showSuccess } = useToast();
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   const query = useInfiniteQuery({
     queryKey: ["journal", "media-all"],
@@ -40,12 +43,25 @@ export default function PhotosView({ bottomInset = 0 }: PhotosViewProps) {
     return all.filter((m) => (m.mime || "").startsWith("image/"));
   }, [query.data]);
 
-  const onOpen = useCallback(
-    (entryId: string) => {
-      if (Platform.OS !== "web") Haptics.selectionAsync();
-      router.push(`/journal-entry?id=${encodeURIComponent(entryId)}`);
+  const onOpen = useCallback((idx: number) => {
+    if (Platform.OS !== "web") Haptics.selectionAsync();
+    setLightboxIndex(idx);
+  }, []);
+
+  const handleDelete = useCallback(
+    async (photo: { id: string; entryId: string }) => {
+      try {
+        await api.deleteJournalMedia(photo.entryId, photo.id);
+        queryClient.invalidateQueries({ queryKey: ["journal", "media-all"] });
+        queryClient.invalidateQueries({ queryKey: ["journal", "media", photo.entryId] });
+        showSuccess("Photo removed");
+        setLightboxIndex(null);
+      } catch (err) {
+        const msg = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Couldn't remove photo.";
+        showError(msg);
+      }
     },
-    [router],
+    [queryClient, showError, showSuccess],
   );
 
   if (query.isLoading) {
@@ -91,10 +107,10 @@ export default function PhotosView({ bottomInset = 0 }: PhotosViewProps) {
       refreshControl={undefined}
     >
       <View style={styles.grid}>
-        {items.map((p) => (
+        {items.map((p, idx) => (
           <Pressable
             key={p.id}
-            onPress={() => onOpen(p.entryId)}
+            onPress={() => onOpen(idx)}
             style={({ pressed }) => [
               styles.cellWrap,
               pressed && { opacity: 0.8 },
@@ -126,6 +142,16 @@ export default function PhotosView({ bottomInset = 0 }: PhotosViewProps) {
           )}
         </Pressable>
       ) : null}
+      <PhotoLightbox
+        visible={lightboxIndex !== null}
+        photos={items.map((p) => ({ id: p.id, signedUrl: p.signedUrl }))}
+        initialIndex={lightboxIndex ?? 0}
+        onClose={() => setLightboxIndex(null)}
+        onDelete={(photo) => {
+          const found = items.find((i) => i.id === photo.id);
+          if (found) handleDelete({ id: found.id, entryId: found.entryId });
+        }}
+      />
     </ScrollView>
   );
 }

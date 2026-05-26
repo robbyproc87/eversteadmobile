@@ -3,7 +3,6 @@ import { Audio } from "expo-av";
 import * as Haptics from "expo-haptics";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Modal,
   Platform,
   Pressable,
@@ -50,11 +49,12 @@ export default function VoiceRecorder({
   onTranscribed,
   onRequireSaveFirst,
 }: VoiceRecorderProps) {
-  const { showError, showSuccess } = useToast();
+  const { showError, showSuccess, showToast } = useToast();
   const [open, setOpen] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [elapsed, setElapsed] = useState(0);
-  const [phase, setPhase] = useState<"idle" | "recording" | "uploading" | "transcribing">("idle");
+  const [phase, setPhase] = useState<"idle" | "recording">("idle");
+  const [inFlight, setInFlight] = useState(false);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(0);
 
@@ -106,6 +106,50 @@ export default function VoiceRecorder({
     }
   }, [clearTick, showError]);
 
+  const processInBackground = useCallback(
+    async (uri: string) => {
+      setInFlight(true);
+      try {
+        let id = entryId;
+        if (!id) {
+          id = await onRequireSaveFirst();
+          if (!id) {
+            return;
+          }
+        }
+        const mime = Platform.OS === "ios" ? "audio/m4a" : "audio/m4a";
+        const { path, signedUrl } = await api.requestJournalMediaUpload(id, mime);
+        const bytes = await uploadToSignedUrl(signedUrl, uri, mime);
+        const confirmed = await api.confirmJournalMedia(id, {
+          path,
+          mime,
+          bytes,
+        });
+
+        const result = await api.transcribeJournalAudio(id, confirmed.id);
+        if (result.status === "complete" && result.text) {
+          onTranscribed(result.text);
+          showSuccess("Voice transcribed");
+        } else if (result.status === "pending") {
+          showToast("Transcription started — refresh shortly.");
+        } else {
+          showError("Couldn't transcribe audio.");
+        }
+      } catch (err) {
+        const msg =
+          err instanceof ApiError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : "Voice note failed.";
+        showError(msg);
+      } finally {
+        setInFlight(false);
+      }
+    },
+    [entryId, onRequireSaveFirst, onTranscribed, showError, showSuccess, showToast],
+  );
+
   const handleStop = useCallback(async () => {
     if (!recording) return;
     clearTick();
@@ -118,54 +162,23 @@ export default function VoiceRecorder({
       showError(msg);
       setPhase("idle");
       setRecording(null);
+      setOpen(false);
+      setElapsed(0);
       return;
     }
     setRecording(null);
+    setPhase("idle");
+    setElapsed(0);
+    setOpen(false);
 
     if (!uri) {
       showError("Recording produced no audio.");
-      setPhase("idle");
       return;
     }
 
-    try {
-      setPhase("uploading");
-      let id = entryId;
-      if (!id) {
-        id = await onRequireSaveFirst();
-        if (!id) {
-          setPhase("idle");
-          return;
-        }
-      }
-      const mime = Platform.OS === "ios" ? "audio/m4a" : "audio/m4a";
-      const { path, signedUrl } = await api.requestJournalMediaUpload(id, mime);
-      const bytes = await uploadToSignedUrl(signedUrl, uri, mime);
-      const confirmed = await api.confirmJournalMedia(id, {
-        path,
-        mime,
-        bytes,
-      });
-
-      setPhase("transcribing");
-      const result = await api.transcribeJournalAudio(id, confirmed.id);
-      if (result.status === "complete" && result.text) {
-        onTranscribed(result.text);
-        showSuccess("Voice transcribed");
-      } else if (result.status === "pending") {
-        showSuccess("Transcription started — refresh shortly.");
-      } else {
-        showError("Couldn't transcribe audio.");
-      }
-      setOpen(false);
-      setPhase("idle");
-      setElapsed(0);
-    } catch (err) {
-      const msg = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Voice note failed.";
-      showError(msg);
-      setPhase("idle");
-    }
-  }, [recording, entryId, clearTick, showError, showSuccess, onTranscribed, onRequireSaveFirst]);
+    showToast("Transcribing voice note…");
+    void processInBackground(uri);
+  }, [recording, clearTick, showError, showToast, processInBackground]);
 
   const handleCancel = useCallback(async () => {
     clearTick();
@@ -181,27 +194,48 @@ export default function VoiceRecorder({
   }, [recording, clearTick]);
 
   const triggerOpen = useCallback(() => {
+    if (inFlight) return;
     if (Platform.OS !== "web") Haptics.selectionAsync();
     setOpen(true);
-  }, []);
+  }, [inFlight]);
+
+  const micDisabled = !!disabled || inFlight;
 
   return (
     <>
-      <Pressable
-        onPress={triggerOpen}
-        disabled={disabled}
-        accessibilityLabel="Record voice note"
-        accessibilityRole="button"
-        style={({ pressed }) => [
-          styles.toolbarBtn,
-          disabled && { opacity: 0.5 },
-          pressed && !disabled && { opacity: 0.7 },
-        ]}
-        hitSlop={6}
-      >
-        <Feather name="mic" size={14} color={Colors.goldDark} />
-        <Text style={styles.toolbarBtnText}>Voice</Text>
-      </Pressable>
+      <View style={styles.toolbarGroup}>
+        <Pressable
+          onPress={triggerOpen}
+          disabled={micDisabled}
+          accessibilityLabel={inFlight ? "Transcribing previous recording" : "Record voice note"}
+          accessibilityRole="button"
+          style={({ pressed }) => [
+            styles.toolbarBtn,
+            micDisabled && styles.toolbarBtnDisabled,
+            pressed && !micDisabled && { opacity: 0.7 },
+          ]}
+          hitSlop={6}
+        >
+          <Feather
+            name="mic"
+            size={14}
+            color={micDisabled ? Colors.textTertiary : Colors.goldDark}
+          />
+          <Text
+            style={[
+              styles.toolbarBtnText,
+              micDisabled && { color: Colors.textTertiary },
+            ]}
+          >
+            Voice
+          </Text>
+        </Pressable>
+        {inFlight ? (
+          <Text style={styles.inFlightText}>
+            Transcribing previous recording…
+          </Text>
+        ) : null}
+      </View>
 
       <Modal
         transparent
@@ -213,35 +247,25 @@ export default function VoiceRecorder({
           <View style={styles.card}>
             <View style={styles.iconWrap}>
               <Feather
-                name={phase === "recording" ? "mic" : phase === "idle" ? "mic" : "loader"}
+                name="mic"
                 size={28}
                 color={phase === "recording" ? Colors.error : Colors.gold}
               />
             </View>
             <Text style={styles.title}>
-              {phase === "idle" && "Voice note"}
-              {phase === "recording" && "Recording…"}
-              {phase === "uploading" && "Uploading…"}
-              {phase === "transcribing" && "Transcribing…"}
+              {phase === "idle" ? "Voice note" : "Recording…"}
             </Text>
             <Text style={styles.subtitle}>
-              {phase === "idle" && "Tap record. Whisper will transcribe and append to your entry."}
-              {phase === "recording" && fmt(elapsed)}
-              {phase === "uploading" && "Sending audio to the server."}
-              {phase === "transcribing" && "AI is converting your voice to text."}
+              {phase === "idle"
+                ? "Tap record. Whisper will transcribe and append to your entry."
+                : fmt(elapsed)}
             </Text>
-
-            {phase === "uploading" || phase === "transcribing" ? (
-              <ActivityIndicator color={Colors.gold} size="large" style={{ marginVertical: 10 }} />
-            ) : null}
 
             <View style={styles.actions}>
               <Pressable
                 onPress={handleCancel}
-                disabled={phase === "uploading" || phase === "transcribing"}
                 style={({ pressed }) => [
                   styles.btnSecondary,
-                  (phase === "uploading" || phase === "transcribing") && { opacity: 0.4 },
                   pressed && { opacity: 0.7 },
                 ]}
               >
@@ -258,7 +282,7 @@ export default function VoiceRecorder({
                   <Feather name="mic" size={16} color={Colors.dark} />
                   <Text style={styles.btnPrimaryText}>Record</Text>
                 </Pressable>
-              ) : phase === "recording" ? (
+              ) : (
                 <Pressable
                   onPress={handleStop}
                   style={({ pressed }) => [
@@ -269,7 +293,7 @@ export default function VoiceRecorder({
                   <Feather name="square" size={16} color={Colors.dark} />
                   <Text style={styles.btnPrimaryText}>Stop & transcribe</Text>
                 </Pressable>
-              ) : null}
+              )}
             </View>
           </View>
         </View>
@@ -279,6 +303,12 @@ export default function VoiceRecorder({
 }
 
 const styles = StyleSheet.create({
+  toolbarGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexShrink: 1,
+  },
   toolbarBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -290,10 +320,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.gold,
   },
+  toolbarBtnDisabled: {
+    backgroundColor: Colors.background,
+    borderColor: Colors.cardBorder,
+    opacity: 0.6,
+  },
   toolbarBtnText: {
     fontSize: 12,
     fontFamily: "Inter_600SemiBold",
     color: Colors.goldDark,
+  },
+  inFlightText: {
+    fontSize: 11,
+    fontFamily: "Inter_500Medium",
+    color: Colors.textSecondary,
+    fontStyle: "italic",
+    flexShrink: 1,
   },
   overlay: {
     flex: 1,

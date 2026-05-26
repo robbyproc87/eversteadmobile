@@ -616,6 +616,12 @@ export const api = {
       nextCursor?: string | null;
     }>(`/journal/media${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`),
 
+  deleteJournalMedia: (entryId: string, mediaId: string) =>
+    apiFetch<{ ok: true }>(
+      `/journal/${encodeURIComponent(entryId)}/media?mediaId=${encodeURIComponent(mediaId)}`,
+      { method: "DELETE" },
+    ),
+
   transcribeJournalAudio: (entryId: string, mediaId: string) =>
     apiFetch<{ text: string; status: "complete" | "failed" | "pending" }>(
       `/journal/${encodeURIComponent(entryId)}/audio-transcribe`,
@@ -633,6 +639,10 @@ export interface MeditationSession {
   endedAt?: string | null;
   rating?: number | null;
   notes?: string | null;
+  tensionBefore?: number | null;
+  tensionAfter?: number | null;
+  stressBefore?: number | null;
+  stressAfter?: number | null;
 }
 
 export interface GeneratedMeditation {
