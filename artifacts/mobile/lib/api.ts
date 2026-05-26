@@ -543,7 +543,9 @@ export const api = {
       greeting?: string;
       quote?: { text: string; author: string } | null;
       song?: { title: string; artist: string; reason: string } | null;
-    }>("/daily-content"),
+      healthset?: string | null;
+      cached?: boolean;
+    }>("/coach/daily-content"),
 
   generateMeditation: (input: { meditationType: string; durationS: number; voice?: string }) =>
     apiFetch<GeneratedMeditationDetail>("/meditation/generate", {
@@ -947,16 +949,21 @@ export const booksApi = {
       body: JSON.stringify(input),
     }),
 
-  updateProgress: (id: string, pagesRead: number) =>
-    apiFetch<Book>(`/books/${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      body: JSON.stringify({ pagesRead }),
-    }),
-
-  remove: (id: string) =>
-    apiFetch<unknown>(`/books/${encodeURIComponent(id)}`, {
-      method: "DELETE",
-    }),
+  /**
+   * Log a positive delta of pages read.
+   * The web route `POST /books/progress` creates a BookProgress row with
+   * `pagesRead` interpreted as the number of pages added in this session
+   * (validated as int >= 1). Callers must compute the delta themselves.
+   * No backend route currently supports decreasing pagesRead.
+   */
+  logProgress: (bookId: string, pagesReadDelta: number, note?: string) =>
+    apiFetch<{ id: string; bookId: string; pagesRead: number; createdAt: string }>(
+      "/books/progress",
+      {
+        method: "POST",
+        body: JSON.stringify({ bookId, pagesRead: pagesReadDelta, ...(note ? { note } : {}) }),
+      },
+    ),
 
   searchGoogle: async (query: string): Promise<GoogleBookResult[]> => {
     const trimmed = query.trim();
@@ -1025,15 +1032,17 @@ export const coursesApi = {
       body: JSON.stringify(input),
     }),
 
-  updateProgress: (id: string, completedModules: number) =>
-    apiFetch<Course>(`/courses/${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      body: JSON.stringify({ completedModules }),
-    }),
-
-  remove: (id: string) =>
-    apiFetch<unknown>(`/courses/${encodeURIComponent(id)}`, {
-      method: "DELETE",
+  /**
+   * Toggle a single course module as completed/uncompleted.
+   * The web route `POST /courses/progress` operates per-module, not by total
+   * count. Callers must pass the specific `moduleId`. The mobile UI does not
+   * yet surface module IDs, so this API is currently unused — see
+   * `app/growth-library.tsx` for the disabled "set count" flow.
+   */
+  toggleModuleProgress: (courseId: string, moduleId: string, completed: boolean) =>
+    apiFetch<{ id?: string; success?: true }>("/courses/progress", {
+      method: "POST",
+      body: JSON.stringify({ courseId, moduleId, completed }),
     }),
 
   /**

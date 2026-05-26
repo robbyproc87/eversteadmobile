@@ -465,10 +465,20 @@ function UpdateProgressModal({
       onError(`Pages can't exceed ${total}.`);
       return;
     }
+    const current = book.pagesRead ?? 0;
+    const delta = n - current;
+    if (delta === 0) {
+      onClose();
+      return;
+    }
+    if (delta < 0) {
+      onError("Decreasing pages read isn't supported yet.");
+      return;
+    }
     setSaving(true);
     try {
-      const updated = await booksApi.updateProgress(book.id, n);
-      onSaved(updated);
+      await booksApi.logProgress(book.id, delta);
+      onSaved({ ...book, pagesRead: n });
     } catch (e) {
       onError(e instanceof Error ? e.message : "Could not save progress");
     } finally {
@@ -940,15 +950,15 @@ function UpdateCourseModal({
       onError(`Modules can't exceed ${total}.`);
       return;
     }
-    setSaving(true);
-    try {
-      const updated = await coursesApi.updateProgress(course.id, n);
-      onSaved(updated);
-    } catch (e) {
-      onError(e instanceof Error ? e.message : "Could not save progress");
-    } finally {
-      setSaving(false);
-    }
+    // TODO(course-progress): The web API operates per-module
+    // (`POST /courses/progress` with `{courseId, moduleId, completed}`)
+    // rather than by total count. This UI needs to be reworked to expose
+    // each module as a toggle before module progress can be persisted.
+    // Until then, surface a clear message instead of issuing a 404.
+    void onSaved;
+    void n;
+    setSaving(false);
+    onError("Course progress updates are temporarily unavailable.");
   };
 
   return (
