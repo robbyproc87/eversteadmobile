@@ -19,7 +19,9 @@ import {
   View,
 } from "react-native";
 import Svg, { Path as SvgPath } from "react-native-svg";
-import ViewShot, { captureRef, type ViewShotRef } from "react-native-view-shot";
+import ViewShot, { captureRef } from "react-native-view-shot";
+
+type ViewShotRef = ViewShot;
 
 import Colors from "@/constants/colors";
 
