@@ -1,0 +1,46 @@
+Run a pre-launch audit of the Everstead mobile app and surface anything I should fix before Play Store internal testing. This is static analysis + cross-codebase consistency, not runtime testing.
+Scope:
+1. Mobile codebase audit (artifacts/mobile/):
+
+tsc --noEmit must be 0 errors (verify again)
+Look for any types and confirm each has an inline justification comment; flag uncommented ones
+Look for // TODO, // FIXME, // HACK comments; list them with file/line
+Look for console.log / console.warn / console.error outside if (__DEV__) blocks; list them
+Look for hardcoded values that should be env vars or constants (URLs, timeouts, magic numbers > 100)
+Look for unhandled promise rejections (async functions without try/catch or .catch)
+Look for React Query hooks without error handling
+Look for useEffect with missing or incomplete dep arrays
+Look for Pressable / TouchableOpacity without accessibilityLabel
+
+2. API surface consistency between mobile and web:
+
+For every method in artifacts/mobile/lib/api.ts, check there's a corresponding route in the web app at github.com/robbyproc87/everstead/src/app/api/
+Flag any mobile API call that doesn't have a matching web route (those will 404 in production)
+For each mobile call, verify the HTTP method matches and the URL shape matches (path params vs query params — this is exactly the bug just caught with the photo-delete URL)
+For each mobile call's expected response shape, compare against the web route's actual response shape. Flag mismatches.
+
+3. Auth and credential surface:
+
+Confirm no credentials are committed to the mobile repo (search for private_key, api_key, secret, password in committed files — exclude .gitignore'd paths)
+Confirm .gitignore properly covers *.service-account.json, *.json.json, and the specific filename
+Confirm lib/api.ts apiFetch correctly handles 401, 402, and 5xx separately
+
+4. Performance and bundle:
+
+Check package.json for large or duplicate deps (e.g., two different chart libraries, two different date libraries)
+Flag any imports of large libraries that could use lighter alternatives
+Check for import * as X patterns that pull whole libraries
+
+5. Documentation:
+
+Is there a README in artifacts/mobile/ that reflects current state? If stale or missing, flag it
+Is the build/run process documented for someone joining the project cold?
+
+6. Feature parity sanity check vs web:
+
+Walk through the web app's main features (Today, Planner Day/Week/Year, Journal, Meditation, Sage, Life Architecture, Settings) and confirm each has a mobile equivalent
+For each, flag any feature where mobile and web behavior would visibly diverge to a user
+
+Output a single report grouped by category. For each finding, classify severity: BLOCKER (must fix before Play Store), HIGH (should fix before launch, but app is shippable without), MEDIUM (good hygiene, do in v1.1), LOW (nice-to-have).
+Do NOT fix anything in this audit. Just report. After I read the report, I'll decide what to fix and in what order.
+Halt with the report when done.
