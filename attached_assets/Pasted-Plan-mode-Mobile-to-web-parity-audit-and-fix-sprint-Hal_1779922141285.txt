@@ -1,0 +1,73 @@
+Plan mode. Mobile-to-web parity audit and fix sprint. Halt on context pressure at clean task boundary; do not silently compress.
+Web has advanced significantly since the last mobile sprint (Sprints 1-5). Goal of this sprint: bring artifacts/mobile/ to current feature parity with github.com/robbyproc87/everstead (web), so future improvements ship to both in lockstep.
+Phase 1 — Diagnose (READ ONLY)
+
+Fetch the full list of web API routes from github.com/robbyproc87/everstead under src/app/api/ using GitHub MCP. Enumerate every route with its method.
+Read mobile's artifacts/mobile/lib/api.ts and enumerate every method, including the URL it calls.
+For each mobile method:
+
+Does the corresponding web route exist?
+Does the HTTP method match?
+Does the URL shape match (path params vs query params)?
+Is the request body shape correct based on web's route handler?
+Is the response shape the mobile expects what web actually returns?
+
+
+For each web route NOT consumed by mobile:
+
+Is the feature available in mobile UI but unwired (broken feature)?
+Is the feature absent from mobile UI entirely (missing feature)?
+Or is the route intentionally web-only (e.g., OAuth callbacks)?
+
+
+For each mobile screen:
+
+Does the equivalent web feature exist?
+Are there UI-level features web has that mobile doesn't (e.g., AI Journal Insight on entry detail, gratitude streak indicator, profile editing in Settings)?
+
+
+Surface a comprehensive parity report with:
+
+Broken API client methods (list with current URL → correct URL)
+Missing API client methods (list with web route to add)
+Missing mobile UI features (list with description + web reference)
+UI polish gaps (e.g., trash icon affordance pattern)
+Coach persona — web recently rewrote the 5 coach system prompts. Mobile uses the web /api/coach/chat route so it inherits these. Verify no mobile front-end coach UX needs updating to match.
+Recommend a fix order
+
+
+
+Phase 2 — Propose fix scope
+Based on the parity report, propose a concrete fix list grouped by impact:
+
+BLOCKERS for public launch (broken API calls, features that 404, security gaps)
+HIGH priority parity (features web has that mobile users will notice as missing)
+MEDIUM priority parity (features web has that mobile users may or may not notice)
+LOW priority polish
+
+Estimate scope per task. Recommend a sprint structure (single batch vs split into 2-3 batches).
+Phase 3 — HALT for approval
+Do not modify any code. Wait for user review and approval of the scope.
+After approval, user will either:
+
+Approve the full scope as a single batch
+Approve a subset, defer the rest
+Restructure
+
+Phase 4 — Execute (only after approval)
+Once approved, execute against the approved scope. Per-task commits with messages like mobile: fix books CRUD URL drift, mobile: wire trends tab to backend, etc.
+Run tsc --noEmit clean on artifacts/mobile/. Halt with final report including:
+
+Per-task outcome
+API client changes summary
+New mobile UI components added
+Production AAB + preview APK build URLs
+Confirmation google-play-service-account.json was NOT modified
+
+Hard rules
+
+Phase 1 and Phase 2 are READ ONLY. No file writes to artifacts/mobile/.
+Phase 3 is a mandatory halt.
+Phase 4 only after explicit approval.
+Cross-reference with both repos via GitHub MCP — do not guess web route shapes.
+This is a parity sprint, not a feature sprint. Do not introduce new features that don't exist on web.
