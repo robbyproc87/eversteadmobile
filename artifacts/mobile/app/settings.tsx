@@ -3,6 +3,7 @@ import Constants from "expo-constants";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import * as Linking from "expo-linking";
+import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -22,6 +23,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
 import {
   type BillingStatus,
+  type CalendarConnection,
   api,
   integrationsApi,
   isPreviewAuthError,
@@ -52,6 +54,11 @@ function SettingsContent() {
   const [billingLoading, setBillingLoading] = useState(true);
   const [calendar, setCalendar] = useState<IntegrationStatus | null>(null);
   const [calendarLoading, setCalendarLoading] = useState(true);
+  const [calendarConnections, setCalendarConnections] = useState<
+    CalendarConnection[]
+  >([]);
+  const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
+  const [portalLoading, setPortalLoading] = useState(false);
   const [isPreview, setIsPreview] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -62,9 +69,10 @@ function SettingsContent() {
         setBillingLoading(true);
         setCalendarLoading(true);
       }
-      const [billingRes, calRes] = await Promise.allSettled([
+      const [billingRes, calRes, connsRes] = await Promise.allSettled([
         api.getBillingStatus(),
         integrationsApi.getCalendarStatus(),
+        integrationsApi.listCalendarConnections(),
       ]);
       let preview = false;
       if (billingRes.status === "fulfilled") {
@@ -91,6 +99,12 @@ function SettingsContent() {
         } else {
           setCalendar({ connected: false, reason: "Unknown" });
         }
+      }
+      if (connsRes.status === "fulfilled") {
+        setCalendarConnections(connsRes.value ?? []);
+      } else {
+        if (isPreviewAuthError(connsRes.reason)) preview = true;
+        setCalendarConnections([]);
       }
       setIsPreview(preview);
       setBillingLoading(false);
@@ -137,6 +151,77 @@ function SettingsContent() {
       },
     ]);
   };
+
+  const handleDisconnect = useCallback(
+    (conn: CalendarConnection) => {
+      const doDisconnect = async () => {
+        setDisconnectingId(conn.id);
+        try {
+          await integrationsApi.disconnectCalendar(conn.id);
+          setCalendarConnections((prev) =>
+            prev.filter((c) => c.id !== conn.id),
+          );
+          if (Platform.OS !== "web") {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          }
+          // Refresh inferred status as well.
+          try {
+            const next = await integrationsApi.getCalendarStatus();
+            setCalendar(next);
+          } catch {
+            // ignore
+          }
+        } catch (e) {
+          showError(
+            e instanceof Error ? e.message : "Could not disconnect calendar",
+          );
+        } finally {
+          setDisconnectingId(null);
+        }
+      };
+      const label = conn.email
+        ? `${conn.provider} (${conn.email})`
+        : conn.provider;
+      if (Platform.OS === "web") {
+        if (
+          typeof window !== "undefined" &&
+          window.confirm(`Disconnect ${label}? Synced events will be removed.`)
+        ) {
+          void doDisconnect();
+        }
+        return;
+      }
+      Alert.alert(
+        "Disconnect calendar?",
+        `${label}\n\nSynced events will be removed from your planner.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Disconnect",
+            style: "destructive",
+            onPress: () => void doDisconnect(),
+          },
+        ],
+      );
+    },
+    [showError],
+  );
+
+  const handleManageSubscription = useCallback(async () => {
+    if (portalLoading) return;
+    setPortalLoading(true);
+    try {
+      const { url } = await api.createBillingPortal();
+      if (!url) throw new Error("No portal URL");
+      await WebBrowser.openBrowserAsync(url);
+    } catch (e) {
+      showError(
+        e instanceof Error ? e.message : "Could not open subscription portal",
+      );
+    } finally {
+      setPortalLoading(false);
+    }
+  }, [portalLoading, showError]);
 
   const openPrivacy = async () => {
     try {
@@ -217,12 +302,20 @@ function SettingsContent() {
           billing={billing}
           error={billingError}
           isPreview={isPreview}
+          onManage={handleManageSubscription}
+          managing={portalLoading}
         />
       </View>
 
       <SectionHeader label="Integrations" />
       <View style={styles.sectionCard}>
-        <CalendarRow loading={calendarLoading} status={calendar} />
+        <CalendarRow
+          loading={calendarLoading}
+          status={calendar}
+          connections={calendarConnections}
+          onDisconnect={handleDisconnect}
+          disconnectingId={disconnectingId}
+        />
       </View>
 
       <SectionHeader label="About" />
@@ -274,11 +367,15 @@ function BillingRow({
   billing,
   error,
   isPreview,
+  onManage,
+  managing,
 }: {
   loading: boolean;
   billing: BillingStatus | null;
   error: string | null;
   isPreview?: boolean;
+  onManage?: () => void;
+  managing?: boolean;
 }) {
   if (loading) {
     return (
@@ -331,17 +428,56 @@ function BillingRow({
       ? Colors.gold
       : Colors.textSecondary;
 
+  // Show the "Manage subscription" affordance when we have any kind of
+  // subscription (active, trialing, or even a cancelled-but-recoverable plan).
+  // The web `/billing/create-portal` returns 404 if no Stripe customer exists,
+  // which we surface via showError on tap rather than hiding the button.
+  const showManage = !!onManage && billing.plan !== "free";
+
   return (
-    <View style={styles.menuItem}>
-      <View style={styles.menuItemIconWrap}>
-        <Feather name="credit-card" size={18} color={Colors.gold} />
+    <View>
+      <View style={styles.menuItem}>
+        <View style={styles.menuItemIconWrap}>
+          <Feather name="credit-card" size={18} color={Colors.gold} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.menuItemLabel}>{planName}</Text>
+          <Text style={[styles.menuItemSub, { color: statusColor }]}>
+            {statusLabel}
+          </Text>
+        </View>
       </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.menuItemLabel}>{planName}</Text>
-        <Text style={[styles.menuItemSub, { color: statusColor }]}>
-          {statusLabel}
-        </Text>
-      </View>
+      {showManage ? (
+        <Pressable
+          onPress={onManage}
+          disabled={managing}
+          style={({ pressed }) => [
+            styles.menuItem,
+            styles.menuItemBorder,
+            pressed && { backgroundColor: Colors.background },
+            managing && { opacity: 0.6 },
+          ]}
+          accessibilityLabel="Manage subscription"
+        >
+          <View style={styles.menuItemIconWrap}>
+            {managing ? (
+              <ActivityIndicator size="small" color={Colors.gold} />
+            ) : (
+              <Feather
+                name="external-link"
+                size={18}
+                color={Colors.textSecondary}
+              />
+            )}
+          </View>
+          <Text style={styles.menuItemLabel}>Manage subscription</Text>
+          <Feather
+            name="chevron-right"
+            size={18}
+            color={Colors.textTertiary}
+          />
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -349,9 +485,15 @@ function BillingRow({
 function CalendarRow({
   loading,
   status,
+  connections,
+  onDisconnect,
+  disconnectingId,
 }: {
   loading: boolean;
   status: IntegrationStatus | null;
+  connections: CalendarConnection[];
+  onDisconnect: (conn: CalendarConnection) => void;
+  disconnectingId: string | null;
 }) {
   if (loading) {
     return (
@@ -360,37 +502,93 @@ function CalendarRow({
       </View>
     );
   }
-  const connected = status?.connected ?? false;
+  const connected =
+    (status?.connected ?? false) || connections.length > 0;
   return (
-    <View style={styles.menuItem}>
-      <View
-        style={[
-          styles.menuItemIconWrap,
-          connected && { backgroundColor: Colors.goldLight },
-        ]}
-      >
-        <Feather
-          name="calendar"
-          size={18}
-          color={connected ? Colors.gold : Colors.textSecondary}
-        />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.menuItemLabel}>Calendar</Text>
-        <Text
+    <View>
+      <View style={styles.menuItem}>
+        <View
           style={[
-            styles.menuItemSub,
-            { color: connected ? Colors.success : Colors.textSecondary },
+            styles.menuItemIconWrap,
+            connected && { backgroundColor: Colors.goldLight },
           ]}
         >
-          {connected ? "Connected" : status?.reason ?? "Not connected"}
-        </Text>
-        {!connected ? (
-          <Text style={styles.menuItemHint}>
-            Manage on the web at my.everstead.app
+          <Feather
+            name="calendar"
+            size={18}
+            color={connected ? Colors.gold : Colors.textSecondary}
+          />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.menuItemLabel}>Calendar</Text>
+          <Text
+            style={[
+              styles.menuItemSub,
+              { color: connected ? Colors.success : Colors.textSecondary },
+            ]}
+          >
+            {connected
+              ? `${connections.length || ""} ${
+                  connections.length === 1 ? "calendar" : "calendars"
+                } connected`.trim() || "Connected"
+              : status?.reason ?? "Not connected"}
           </Text>
-        ) : null}
+          {!connected ? (
+            <Text style={styles.menuItemHint}>
+              Connect on the web at my.everstead.app
+            </Text>
+          ) : null}
+        </View>
       </View>
+      {connections.map((conn) => {
+        const label = conn.email || conn.provider;
+        const subLabel = conn.email ? conn.provider : null;
+        const busy = disconnectingId === conn.id;
+        return (
+          <View
+            key={conn.id}
+            style={[styles.menuItem, styles.menuItemBorder]}
+          >
+            <View style={styles.menuItemIconWrap}>
+              <Feather
+                name={conn.provider === "google" ? "mail" : "calendar"}
+                size={16}
+                color={Colors.textSecondary}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.menuItemLabel} numberOfLines={1}>
+                {label}
+              </Text>
+              {subLabel ? (
+                <Text style={styles.menuItemSub} numberOfLines={1}>
+                  {subLabel}
+                  {conn.isPrimary ? " · Primary" : ""}
+                </Text>
+              ) : conn.isPrimary ? (
+                <Text style={styles.menuItemSub}>Primary</Text>
+              ) : null}
+            </View>
+            <Pressable
+              onPress={() => onDisconnect(conn)}
+              disabled={busy}
+              hitSlop={8}
+              style={({ pressed }) => [
+                styles.disconnectBtn,
+                busy && { opacity: 0.5 },
+                pressed && { opacity: 0.6 },
+              ]}
+              accessibilityLabel={`Disconnect ${label}`}
+            >
+              {busy ? (
+                <ActivityIndicator size="small" color={Colors.error} />
+              ) : (
+                <Text style={styles.disconnectBtnText}>Disconnect</Text>
+              )}
+            </Pressable>
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -591,6 +789,19 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     color: Colors.textTertiary,
     marginTop: 2,
+  },
+  disconnectBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.error,
+    backgroundColor: Colors.card,
+  },
+  disconnectBtnText: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    color: Colors.error,
   },
   menuItemValue: {
     fontSize: 13,

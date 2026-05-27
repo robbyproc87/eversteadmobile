@@ -274,6 +274,13 @@ export const api = {
   getTodayPlan: () => apiFetch<TodayPlan>("/plan/today"),
   getBillingStatus: () => apiFetch<BillingStatus>("/billing/status"),
 
+  /**
+   * Open Stripe customer portal. Returns `{ url }` to a hosted portal session.
+   * Mobile opens it via `expo-web-browser`. 404 = no Stripe customer yet.
+   */
+  createBillingPortal: () =>
+    apiFetch<{ url: string }>("/billing/create-portal", { method: "POST" }),
+
   getDailyPlan: (date: string) =>
     apiFetch<DailyPlanData>(`/planner/daily?date=${date}`),
 
@@ -407,6 +414,20 @@ export const api = {
       body: JSON.stringify({ weekId, content }),
     }),
 
+  /**
+   * Ask the server to draft a weekly-story narrative for a single day from
+   * that day's journal entries + daily plan. Returns `{ suggestion }` (string
+   * or null when no source data exists).
+   */
+  suggestWeekStory: (weekId: string, date: string) =>
+    apiFetch<{ suggestion: string | null; message?: string }>(
+      "/planner/week/story/suggest",
+      {
+        method: "POST",
+        body: JSON.stringify({ weekId, date }),
+      },
+    ),
+
   setNextWeekTEs: (
     currentWeekId: string,
     items: Array<{ category: string; ordinal: number; text: string }>,
@@ -504,12 +525,90 @@ export const api = {
   saveOnboardingPartial: (
     progress: Record<string, unknown>,
     type: "quick" | "deep",
-    stepIndex: number,
-  ) =>
-    apiFetch<unknown>("/onboarding/partial", {
-      method: "POST",
-      body: JSON.stringify({ progress, type, stepIndex }),
-    }),
+    _stepIndex: number,
+  ) => {
+    // Web `/onboarding/partial` is PUT-only and expects { answers, type } with
+    // a strict shape. Mobile's OnboardingData uses different field names for
+    // two keys (routineRating, accountability) and may carry placeholder
+    // zero/null values that fail the web validator — filter & rename here so
+    // partial saves actually persist (per Batch A B2).
+    const src = progress;
+    const answers: Record<string, unknown> = {};
+    const num = (v: unknown) =>
+      typeof v === "number" && Number.isFinite(v) ? v : undefined;
+    const str = (v: unknown) =>
+      typeof v === "string" && v.trim() ? v : undefined;
+    const arr = (v: unknown) => (Array.isArray(v) ? v : undefined);
+
+    const lifeRating = num(src.lifeRating);
+    if (lifeRating !== undefined && lifeRating >= 1 && lifeRating <= 10) {
+      answers.lifeRating = lifeRating;
+    }
+    const topGoals = arr(src.topGoals)
+      ?.map((g) => (typeof g === "string" ? g : ""))
+      .filter((g) => g.trim().length > 0);
+    if (topGoals && topGoals.length > 0) answers.topGoals = topGoals.slice(0, 3);
+    const biggestChallenge = str(src.biggestChallenge);
+    if (biggestChallenge) answers.biggestChallenge = biggestChallenge;
+    const focusAreas = arr(src.focusAreas)?.filter(
+      (a): a is string =>
+        typeof a === "string" &&
+        ["mindset", "professional", "health", "mindfulness", "creativity"].includes(
+          a,
+        ),
+    );
+    if (focusAreas && focusAreas.length > 0) answers.focusAreas = focusAreas;
+    const coachingStyle = num(src.coachingStyle);
+    if (
+      coachingStyle !== undefined &&
+      coachingStyle >= 0 &&
+      coachingStyle <= 100
+    ) {
+      answers.coachingStyle = Math.round(coachingStyle);
+    }
+    const whyGrowing = str(src.whyGrowing);
+    if (whyGrowing) answers.whyGrowing = whyGrowing;
+    const dailyRoutineRating = num(src.routineRating);
+    if (
+      dailyRoutineRating !== undefined &&
+      dailyRoutineRating >= 1 &&
+      dailyRoutineRating <= 10
+    ) {
+      answers.dailyRoutineRating = Math.round(dailyRoutineRating);
+    }
+    const hs = src.healthSnapshot as
+      | { sleep?: number; exercise?: number; nutrition?: number; energy?: number }
+      | undefined;
+    if (
+      hs &&
+      [hs.sleep, hs.exercise, hs.nutrition, hs.energy].every(
+        (n) => typeof n === "number" && n >= 1 && n <= 5,
+      )
+    ) {
+      answers.healthSnapshot = {
+        sleep: hs.sleep,
+        exercise: hs.exercise,
+        nutrition: hs.nutrition,
+        energy: hs.energy,
+      };
+    }
+    const ls = str(src.learningStyle);
+    if (ls && ["reading", "doing", "discussing", "watching"].includes(ls)) {
+      answers.learningStyle = ls;
+    }
+    const ap = str(src.accountability);
+    if (
+      ap &&
+      ["celebrate-wins", "call-me-out", "ask-questions", "mix"].includes(ap)
+    ) {
+      answers.accountabilityPref = ap;
+    }
+
+    return apiFetch<unknown>("/onboarding/partial", {
+      method: "PUT",
+      body: JSON.stringify({ answers, type }),
+    });
+  },
 
   saveOnboarding: (
     data: Record<string, unknown>,
@@ -965,36 +1064,39 @@ export const booksApi = {
       },
     ),
 
+  /**
+   * Search for books via web's `/books/search` endpoint (Google Books-backed
+   * with auth + caching). Web returns `{ googleId, title, authors[], pageCount,
+   * coverUrl, publishedDate, isbn }`; we adapt to GoogleBookResult.
+   */
   searchGoogle: async (query: string): Promise<GoogleBookResult[]> => {
     const trimmed = query.trim();
     if (!trimmed) return [];
-    const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(
-      trimmed,
-    )}&maxResults=12&printType=books`;
-    const res = await fetch(url);
-    if (!res.ok) {
-      throw new ApiError(
-        `Google Books search failed: ${res.status}`,
-        res.status,
-        res.statusText,
-      );
-    }
-    const data = (await res.json()) as GoogleBooksApiResponse;
-    return (data.items ?? [])
-      .map((item) => {
-        const v = item.volumeInfo ?? {};
-        return {
-          googleBooksId: item.id,
-          title: v.title ?? "Untitled",
-          author: v.authors?.join(", "),
-          coverUrl: normalizeImageUrl(
-            v.imageLinks?.thumbnail ?? v.imageLinks?.smallThumbnail,
-          ),
-          totalPages: v.pageCount,
-        } satisfies GoogleBookResult;
-      })
+    type WebResult = {
+      googleId: string;
+      title: string;
+      authors?: string[];
+      pageCount?: number | null;
+      coverUrl?: string | null;
+    };
+    const data = await apiFetch<WebResult[]>(
+      `/books/search?q=${encodeURIComponent(trimmed)}`,
+    );
+    return (data ?? [])
+      .map((b) => ({
+        googleBooksId: b.googleId,
+        title: b.title || "Untitled",
+        author: (b.authors ?? []).join(", ") || undefined,
+        coverUrl: normalizeImageUrl(b.coverUrl ?? undefined) || undefined,
+        totalPages: b.pageCount ?? undefined,
+      }))
       .filter((b) => b.title);
   },
+
+  remove: (id: string) =>
+    apiFetch<{ success: true }>(`/books/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
 };
 
 // ---------- Growth Library: Courses ----------
@@ -1046,61 +1148,68 @@ export const coursesApi = {
     }),
 
   /**
-   * Fetch OpenGraph metadata for a URL using the public microlink.io service.
-   * No API key required for low-volume usage.
+   * Fetch OpenGraph metadata via web's `/courses/og-fetch` (auth + SSRF
+   * guards). Returns `{ title, description, image, siteName }` — adapted to
+   * mobile's `OgMetadata` shape (imageUrl key, normalized).
    */
   scrapeOg: async (rawUrl: string): Promise<OgMetadata> => {
     const trimmed = rawUrl.trim();
     if (!trimmed) {
       throw new ApiError("URL is required", 0, "Bad Request");
     }
-    const normalized = /^https?:\/\//i.test(trimmed)
-      ? trimmed
-      : `https://${trimmed}`;
-    const res = await fetch(
-      `https://api.microlink.io/?url=${encodeURIComponent(normalized)}`,
-    );
-    if (!res.ok) {
-      throw new ApiError(
-        `Could not read that link (${res.status})`,
-        res.status,
-        res.statusText,
-      );
-    }
-    const json = (await res.json()) as {
-      status?: string;
-      data?: {
-        title?: string;
-        description?: string;
-        image?: { url?: string };
-        publisher?: string;
-      };
+    type WebOg = {
+      title: string | null;
+      description: string | null;
+      image: string | null;
+      siteName: string | null;
     };
-    if (json.status !== "success" || !json.data) {
-      throw new ApiError(
-        "Could not read that link",
-        0,
-        "Scrape Error",
-      );
-    }
+    const data = await apiFetch<WebOg>(
+      `/courses/og-fetch?url=${encodeURIComponent(trimmed)}`,
+    );
     let host = "";
     try {
+      const normalized = /^https?:\/\//i.test(trimmed)
+        ? trimmed
+        : `https://${trimmed}`;
       host = new URL(normalized).hostname.replace(/^www\./, "");
     } catch {
       // ignore
     }
     return {
-      title: json.data.title,
-      description: json.data.description,
-      imageUrl: normalizeImageUrl(json.data.image?.url),
-      siteName: json.data.publisher || host,
+      title: data.title ?? undefined,
+      description: data.description ?? undefined,
+      imageUrl: normalizeImageUrl(data.image ?? undefined),
+      siteName: data.siteName ?? host,
     };
   },
+
+  remove: (id: string) =>
+    apiFetch<{ success: true }>(`/courses/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
 };
 
 // ---------- Calendar integration status ----------
 
+export interface CalendarConnection {
+  id: string;
+  provider: string;
+  email?: string | null;
+  isActive?: boolean;
+  isPrimary?: boolean;
+  createdAt?: string;
+}
+
 export const integrationsApi = {
+  listCalendarConnections: () =>
+    apiFetch<CalendarConnection[]>("/calendar/connections"),
+
+  disconnectCalendar: (connectionId: string) =>
+    apiFetch<{ success: true }>(
+      `/calendar/connections/${encodeURIComponent(connectionId)}`,
+      { method: "DELETE" },
+    ),
+
   /**
    * Mobile is read-only for calendar — we infer connection status by attempting
    * to read a small window. Auth (401/403) means signed out, not disconnected.
@@ -1140,6 +1249,16 @@ export const coachApi = {
   getConversation: (id: string) =>
     apiFetch<CoachConversationDetail>(
       `/coach/conversations/${encodeURIComponent(id)}`,
+    ),
+
+  /**
+   * Delete a single coach conversation. The web collection route is shared:
+   * `DELETE /coach/conversations?id=<convId>` returning `{ success: true }`.
+   */
+  deleteConversation: (id: string) =>
+    apiFetch<{ success: true }>(
+      `/coach/conversations?id=${encodeURIComponent(id)}`,
+      { method: "DELETE" },
     ),
 
   getSettings: () => apiFetch<CoachSettings>("/coach/settings"),

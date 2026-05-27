@@ -11,6 +11,7 @@ import React, {
 } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Easing,
   KeyboardAvoidingView,
@@ -243,6 +244,7 @@ export default function SageScreen() {
 
   const [activeCoachId, setActiveCoachId] = useState<string>("sage");
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
+  const [deletingConv, setDeletingConv] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
@@ -283,6 +285,60 @@ export default function SageScreen() {
   const isPreviewError =
     isPreviewAuthError(conversationsQuery.error) ||
     isPreviewAuthError(activeConversationQuery.error);
+
+  const handleDeleteActiveConversation = useCallback(() => {
+    const convId = activeConvId;
+    if (!convId || deletingConv) return;
+    const doDelete = async () => {
+      setDeletingConv(true);
+      try {
+        await coachApi.deleteConversation(convId);
+        // Drop cached data + force a fresh resolve for this coach.
+        queryClient.removeQueries({
+          queryKey: ["coach", "conversation", convId],
+        });
+        await queryClient.invalidateQueries({
+          queryKey: ["coach", "conversations"],
+        });
+        resolvedCoachRef.current = null;
+        setActiveConvId(null);
+        if (Platform.OS !== "web") {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        }
+        showToast("Conversation deleted", { variant: "success" });
+      } catch (err) {
+        showToast(
+          err instanceof Error ? err.message : "Could not delete conversation",
+          { variant: "error" },
+        );
+      } finally {
+        setDeletingConv(false);
+      }
+    };
+    if (Platform.OS === "web") {
+      if (
+        typeof window !== "undefined" &&
+        window.confirm(
+          "Delete this conversation? Messages will be permanently removed.",
+        )
+      ) {
+        void doDelete();
+      }
+      return;
+    }
+    Alert.alert(
+      "Delete conversation?",
+      "Messages will be permanently removed. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => void doDelete(),
+        },
+      ],
+    );
+  }, [activeConvId, deletingConv, queryClient, showToast]);
 
   // Resolve the active conversation per coach whenever the coach changes.
   useEffect(() => {
@@ -567,6 +623,26 @@ export default function SageScreen() {
             </View>
           </View>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+            <Pressable
+              onPress={handleDeleteActiveConversation}
+              disabled={!activeConvId || deletingConv}
+              style={({ pressed }) => [
+                styles.closeButton,
+                (!activeConvId || deletingConv) && { opacity: 0.35 },
+                pressed && { opacity: 0.6 },
+              ]}
+              accessibilityLabel="Delete this conversation"
+            >
+              {deletingConv ? (
+                <ActivityIndicator size="small" color={Colors.textSecondary} />
+              ) : (
+                <Feather
+                  name="trash-2"
+                  size={18}
+                  color={Colors.textSecondary}
+                />
+              )}
+            </Pressable>
             <Pressable
               onPress={() => setSettingsOpen(true)}
               style={({ pressed }) => [

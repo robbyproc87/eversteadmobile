@@ -663,6 +663,8 @@ function WeeklyStorySection({
   );
   const [savingNarr, setSavingNarr] = useState(false);
   const [savingObs, setSavingObs] = useState(false);
+  const [suggestingIdx, setSuggestingIdx] = useState<number | null>(null);
+  const [suggestMsg, setSuggestMsg] = useState<string | null>(null);
 
   const initializedRef = useRef(false);
   const dirtyNarrativesRef = useRef(false);
@@ -744,6 +746,40 @@ function WeeklyStorySection({
       setSavingObs(false);
     }
   }, [weekId, obs, onSaved]);
+
+  const handleSuggest = useCallback(
+    async (idx: number, date: Date) => {
+      if (!weekId || suggestingIdx !== null) return;
+      haptic();
+      setSuggestingIdx(idx);
+      setSuggestMsg(null);
+      try {
+        const isoDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+        const res = await api.suggestWeekStory(weekId, isoDate);
+        if (res?.suggestion && res.suggestion.trim()) {
+          dirtyNarrativesRef.current = true;
+          setNarratives((prev) => {
+            const next = [...prev];
+            const existing = next[idx] || "";
+            next[idx] = existing
+              ? `${existing.trimEnd()}\n\n${res.suggestion}`
+              : res.suggestion!;
+            return next;
+          });
+        } else {
+          setSuggestMsg(
+            res?.message ||
+              "Nothing to draft from yet — add a journal entry or plan for this day.",
+          );
+        }
+      } catch {
+        setSuggestMsg("Couldn't draft a suggestion. Please try again.");
+      } finally {
+        setSuggestingIdx(null);
+      }
+    },
+    [weekId, suggestingIdx],
+  );
 
   const toggleCollapse = useCallback((idx: number) => {
     haptic();
@@ -831,16 +867,48 @@ function WeeklyStorySection({
                 </Pressable>
               ) : null
             ) : (
-              <TextInput
-                style={styles.storyTextarea}
-                value={narratives[i]}
-                onChangeText={(t) => updateNarrative(i, t)}
-                onBlur={commitNarratives}
-                placeholder="How did you live this day?"
-                placeholderTextColor={Colors.textTertiary}
-                multiline
-                textAlignVertical="top"
-              />
+              <>
+                <TextInput
+                  style={styles.storyTextarea}
+                  value={narratives[i]}
+                  onChangeText={(t) => updateNarrative(i, t)}
+                  onBlur={commitNarratives}
+                  placeholder="How did you live this day?"
+                  placeholderTextColor={Colors.textTertiary}
+                  multiline
+                  textAlignVertical="top"
+                />
+                <View style={styles.suggestRow}>
+                  <Pressable
+                    onPress={() => handleSuggest(i, date)}
+                    disabled={!weekId || suggestingIdx !== null}
+                    hitSlop={8}
+                    style={({ pressed }) => [
+                      styles.suggestBtn,
+                      (!weekId || suggestingIdx !== null) && { opacity: 0.5 },
+                      pressed && { opacity: 0.7 },
+                    ]}
+                  >
+                    {suggestingIdx === i ? (
+                      <ActivityIndicator size="small" color={Colors.gold} />
+                    ) : (
+                      <>
+                        <Feather
+                          name="zap"
+                          size={12}
+                          color={Colors.goldDark}
+                        />
+                        <Text style={styles.suggestBtnText}>Suggest</Text>
+                      </>
+                    )}
+                  </Pressable>
+                  {suggestMsg && suggestingIdx === null ? (
+                    <Text style={styles.suggestHint} numberOfLines={2}>
+                      {suggestMsg}
+                    </Text>
+                  ) : null}
+                </View>
+              </>
             )}
           </View>
         );
@@ -1493,6 +1561,34 @@ const styles = StyleSheet.create({
     padding: 10,
     marginTop: 8,
     minHeight: 90,
+  },
+  suggestRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 6,
+  },
+  suggestBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: Colors.gold,
+    backgroundColor: Colors.goldLight,
+  },
+  suggestBtnText: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    color: Colors.goldDark,
+  },
+  suggestHint: {
+    flex: 1,
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+    color: Colors.textSecondary,
   },
   observationBlock: {
     marginTop: 14,

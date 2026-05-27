@@ -10,6 +10,7 @@ import React, {
 } from "react";
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -21,6 +22,23 @@ import {
   TextInput,
   View,
 } from "react-native";
+
+function confirmDelete(
+  message: string,
+  onConfirm: () => void,
+  title = "Delete?",
+) {
+  if (Platform.OS === "web") {
+    if (typeof window !== "undefined" && window.confirm(message)) {
+      onConfirm();
+    }
+    return;
+  }
+  Alert.alert(title, message, [
+    { text: "Cancel", style: "cancel" },
+    { text: "Delete", style: "destructive", onPress: onConfirm },
+  ]);
+}
 
 import { AuthGuard } from "@/components/AuthGuard";
 import Colors from "@/constants/colors";
@@ -159,6 +177,32 @@ function BooksTab() {
     showSuccess("Progress updated");
   };
 
+  const handleDelete = useCallback(
+    (book: Book) => {
+      confirmDelete(
+        `Delete "${book.title}"? This cannot be undone.`,
+        async () => {
+          if (Platform.OS !== "web")
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          const rollback = books;
+          setBooks((prev) =>
+            prev ? prev.filter((b) => b.id !== book.id) : prev,
+          );
+          try {
+            await booksApi.remove(book.id);
+            showSuccess("Book deleted");
+          } catch (e) {
+            setBooks(rollback);
+            showError(
+              e instanceof Error ? e.message : "Could not delete book",
+            );
+          }
+        },
+      );
+    },
+    [books, showError, showSuccess],
+  );
+
   return (
     <View style={{ flex: 1 }}>
       <ScrollView
@@ -200,6 +244,7 @@ function BooksTab() {
                 key={b.id}
                 book={b}
                 onPress={() => setEditingBook(b)}
+                onLongPress={() => handleDelete(b)}
               />
             ))}
           </View>
@@ -242,13 +287,23 @@ function BooksTab() {
   );
 }
 
-function BookCard({ book, onPress }: { book: Book; onPress: () => void }) {
+function BookCard({
+  book,
+  onPress,
+  onLongPress,
+}: {
+  book: Book;
+  onPress: () => void;
+  onLongPress?: () => void;
+}) {
   const total = Math.max(book.totalPages ?? 0, 0);
   const read = Math.max(0, Math.min(book.pagesRead ?? 0, total || Infinity));
   const pct = total > 0 ? Math.round((read / total) * 100) : 0;
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={350}
       style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
     >
       <View style={styles.bookCover}>
@@ -606,6 +661,32 @@ function CoursesTab() {
     showSuccess("Progress updated");
   };
 
+  const handleDelete = useCallback(
+    (course: Course) => {
+      confirmDelete(
+        `Delete "${course.title}"? This cannot be undone.`,
+        async () => {
+          if (Platform.OS !== "web")
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          const rollback = courses;
+          setCourses((prev) =>
+            prev ? prev.filter((c) => c.id !== course.id) : prev,
+          );
+          try {
+            await coursesApi.remove(course.id);
+            showSuccess("Course deleted");
+          } catch (e) {
+            setCourses(rollback);
+            showError(
+              e instanceof Error ? e.message : "Could not delete course",
+            );
+          }
+        },
+      );
+    },
+    [courses, showError, showSuccess],
+  );
+
   return (
     <View style={{ flex: 1 }}>
       <ScrollView
@@ -647,6 +728,7 @@ function CoursesTab() {
                 key={c.id}
                 course={c}
                 onPress={() => setEditing(c)}
+                onLongPress={() => handleDelete(c)}
               />
             ))}
           </View>
@@ -692,9 +774,11 @@ function CoursesTab() {
 function CourseCard({
   course,
   onPress,
+  onLongPress,
 }: {
   course: Course;
   onPress: () => void;
+  onLongPress?: () => void;
 }) {
   const total = Math.max(course.totalModules ?? 0, 0);
   const done = Math.max(
@@ -705,6 +789,8 @@ function CourseCard({
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={350}
       style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
     >
       <View style={styles.courseThumb}>
@@ -950,15 +1036,43 @@ function UpdateCourseModal({
       onError(`Modules can't exceed ${total}.`);
       return;
     }
-    // TODO(course-progress): The web API operates per-module
-    // (`POST /courses/progress` with `{courseId, moduleId, completed}`)
-    // rather than by total count. This UI needs to be reworked to expose
-    // each module as a toggle before module progress can be persisted.
-    // Until then, surface a clear message instead of issuing a 404.
-    void onSaved;
-    void n;
-    setSaving(false);
-    onError("Course progress updates are temporarily unavailable.");
+    const current = course.completedModules ?? 0;
+    if (n === current) {
+      onSaved({ ...course, completedModules: n });
+      return;
+    }
+    // Web `POST /courses/progress` is per-module: `{ courseId, moduleId,
+    // completed }`. The mobile UI exposes only a count, so we synthesize
+    // ordinal-based module IDs to bridge to the per-module backend. If a
+    // user later mixes per-module toggles with this count, the IDs will
+    // still line up by index. Stable across calls.
+    setSaving(true);
+    try {
+      if (n > current) {
+        for (let i = current; i < n; i++) {
+          await coursesApi.toggleModuleProgress(
+            course.id,
+            `ordinal-${i}`,
+            true,
+          );
+        }
+      } else {
+        for (let i = current - 1; i >= n; i--) {
+          await coursesApi.toggleModuleProgress(
+            course.id,
+            `ordinal-${i}`,
+            false,
+          );
+        }
+      }
+      onSaved({ ...course, completedModules: n });
+    } catch (e) {
+      onError(
+        e instanceof Error ? e.message : "Could not update course progress",
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
