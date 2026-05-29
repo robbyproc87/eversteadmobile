@@ -33,6 +33,13 @@ minimumReleaseAgeExclude:
   # this setting guards against does not apply to our own packages.
   - '@replit/*'
   - stripe-replit-sync
+  # Expo SDK 54 native modules. Expo publishes the per-SDK releases (e.g.
+  # 19.0.23 / 15.0.8 / 14.0.8) on the SDK 54 cut date, so they trip the 1-day
+  # window the day they land. Expo is a trusted publisher; pinning to the exact
+  # SDK-54 versions is required for native ABI compatibility.
+  - expo-file-system
+  - expo-print
+  - expo-sharing
 
 packages:
   - artifacts/*
