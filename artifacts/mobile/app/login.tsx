@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import Constants from "expo-constants";
 import { Redirect } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import React, { useState } from "react";
@@ -101,16 +102,18 @@ export default function LoginScreen() {
               </>
             )}
           </Pressable>
-          <Pressable
-            style={({ pressed }) => [
-              styles.previewButton,
-              pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
-            ]}
-            onPress={devBypass}
-          >
-            <Feather name="eye" size={22} color={Colors.dark} />
-            <Text style={styles.previewButtonText}>Preview Mode</Text>
-          </Pressable>
+          {__DEV__ && (
+            <Pressable
+              style={({ pressed }) => [
+                styles.previewButton,
+                pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
+              ]}
+              onPress={devBypass}
+            >
+              <Feather name="eye" size={22} color={Colors.dark} />
+              <Text style={styles.previewButtonText}>Preview Mode</Text>
+            </Pressable>
+          )}
           <Pressable
             accessibilityRole="link"
             accessibilityLabel="Open privacy policy"
@@ -132,7 +135,9 @@ export default function LoginScreen() {
             <Text style={styles.privacyLink}>Privacy Policy</Text>
           </Pressable>
         </View>
-        <Text style={styles.versionText}>v1.2 — Apr 12</Text>
+        <Text style={styles.versionText}>
+          {`v${Constants.expoConfig?.version ?? "1.0"}`}
+        </Text>
       </View>
     </View>
   );
