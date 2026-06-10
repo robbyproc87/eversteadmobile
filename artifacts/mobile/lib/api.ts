@@ -1467,3 +1467,149 @@ export const coachApi = {
   },
 
 };
+
+export interface ReckoningPillar {
+  name: string;
+  claim: string;
+  evidence: string;
+  gap: string;
+  verdict: "aligned" | "drifting" | "contradicted";
+  fork: string;
+}
+
+export interface ReckoningPayload {
+  headline: string;
+  period: string;
+  pillars: ReckoningPillar[];
+  closing: string;
+}
+
+export interface ReckoningResult {
+  id: string;
+  createdAt: string;
+  reckoning: ReckoningPayload;
+  cached?: boolean;
+}
+
+export const reckoningApi = {
+  getLatest: () => apiFetch<ReckoningResult | null>("/coach/reckoning"),
+  generate: (force = false) =>
+    apiFetch<ReckoningResult>("/coach/reckoning", {
+      method: "POST",
+      body: JSON.stringify({ force }),
+    }),
+};
+
+export interface CouncilChunk {
+  speaking?: string;
+  coach?: string;
+  text?: string;
+  isVerdict?: boolean;
+  conversationId?: string;
+  done?: boolean;
+  error?: string;
+}
+
+export const councilApi = {
+  /**
+   * Convene the Council: SSE stream of a five-coach deliberation over
+   * one question. Same transport/auth pattern as coachApi.streamChat.
+   */
+  async *convene(
+    question: string,
+    signal?: AbortSignal,
+  ): AsyncGenerator<CouncilChunk> {
+    const { headers, preview } = await getAuthHeaders();
+    if (preview) {
+      throw new PreviewAuthError();
+    }
+    const doStreamFetch = async (authHeaders: Record<string, string>) => {
+      try {
+        return (await expoFetch(`${API_BASE}/coach/council`, {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify({ question }),
+          signal,
+        })) as unknown as Response;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Network request failed";
+        throw new ApiError(`Network error: ${msg}`, 0, "Network Error");
+      }
+    };
+
+    let res = await doStreamFetch(headers);
+    if (res.status === 401) {
+      const { data, error } = await supabase.auth.refreshSession();
+      const newToken = data?.session?.access_token;
+      if (!error && newToken && newToken !== PREVIEW_TOKEN) {
+        res = await doStreamFetch({
+          ...headers,
+          Authorization: `Bearer ${newToken}`,
+        });
+      }
+    }
+
+    if (!res.ok) {
+      let text = "";
+      try {
+        text = await res.text();
+      } catch {
+        // ignore
+      }
+      let parsed: unknown = text;
+      if (text) {
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          // keep as text
+        }
+      }
+      if (res.status === 402) {
+        throw new PaymentRequiredError(
+          "cross_coach_reference",
+          extractErrorMessage(parsed, "The Council is an Everstead Pro feature."),
+        );
+      }
+      throw new ApiError(
+        extractErrorMessage(parsed, `Council error: ${res.status}`),
+        res.status,
+        res.statusText,
+        parsed,
+      );
+    }
+
+    const reader = (res.body as unknown as ReadableStream<Uint8Array> | null)?.getReader();
+    if (!reader) {
+      throw new ApiError("No response body for stream", 0, "Stream Error");
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() ?? "";
+        for (const evt of events) {
+          const trimmed = evt.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          const payload = trimmed.slice(5).trimStart();
+          if (!payload) continue;
+          try {
+            yield JSON.parse(payload) as CouncilChunk;
+          } catch {
+            // ignore parse errors for stray lines
+          }
+        }
+      }
+    } finally {
+      try {
+        await reader.cancel();
+      } catch {
+        // ignore
+      }
+    }
+  },
+};

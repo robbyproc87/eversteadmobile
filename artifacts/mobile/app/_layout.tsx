@@ -138,6 +138,18 @@ function RootLayoutContent() {
           }}
         />
         <Stack.Screen
+          name="council"
+          options={{
+            headerShown: false,
+            presentation: "modal",
+            animation: "slide_from_bottom",
+          }}
+        />
+        <Stack.Screen
+          name="reckoning"
+          options={{ headerShown: false, animation: "slide_from_right" }}
+        />
+        <Stack.Screen
           name="journal-entry"
           options={{ headerShown: false, animation: "slide_from_right" }}
         />

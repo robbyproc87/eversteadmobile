@@ -44,6 +44,18 @@ const menuItems = [
     subtitle: "Your annual vision & plan",
     route: "/life-architecture",
   },
+  {
+    icon: "users",
+    label: "The Council",
+    subtitle: "Five coaches, one question",
+    route: "/council",
+  },
+  {
+    icon: "file-text",
+    label: "The Reckoning",
+    subtitle: "Your plan vs. your month",
+    route: "/reckoning",
+  },
 ] as const;
 
 export function AppDrawer({ visible, onClose, onOpenSage }: AppDrawerProps) {
