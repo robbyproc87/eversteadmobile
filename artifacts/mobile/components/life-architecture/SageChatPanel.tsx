@@ -23,8 +23,8 @@ import {
 
 import Colors from "@/constants/colors";
 import { useToast } from "@/contexts/ToastContext";
-import { ApiError, coachApi } from "@/lib/api";
-import { type SectionMeta } from "@/lib/life-architecture";
+import { isPaymentRequiredError, lifeArchitectureApi } from "@/lib/api";
+import { sectionNumberFor, type SectionMeta } from "@/lib/life-architecture";
 
 interface ChatMessage {
   id: string;
@@ -37,11 +37,17 @@ interface Props {
   onUpgradeRequired?: () => void;
 }
 
+// The panel previously faked its opening (a local bubble the server
+// never saw) over the generic coach chat - Sage had no idea it had
+// asked anything, nothing persisted, and the save_section_data capture
+// flow never ran. It now drives the dedicated section-aware endpoint:
+// server-held history, section prompts, and live structured capture.
 export function SageChatPanel({ section, onUpgradeRequired }: Props) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
-  const [convId, setConvId] = useState<string | null>(null);
+  const sectionNumber = sectionNumberFor(section.id);
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingContent, setStreamingContent] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -53,10 +59,8 @@ export function SageChatPanel({ section, onUpgradeRequired }: Props) {
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
-  const currentPage = `Life Architecture: ${section.label}`;
-
   const sendRaw = useCallback(
-    async (message: string) => {
+    async (message: string, isInitial = false) => {
       if (abortRef.current) {
         abortRef.current.abort();
       }
@@ -65,16 +69,10 @@ export function SageChatPanel({ section, onUpgradeRequired }: Props) {
 
       try {
         let firstChunk = true;
-        let cid = convId;
         let assistantText = "";
 
-        for await (const chunk of coachApi.streamChat(
-          {
-            conversationId: cid,
-            message,
-            coachType: "sage",
-            currentPage,
-          },
+        for await (const chunk of lifeArchitectureApi.streamSectionChat(
+          { sectionNumber, message, isInitial },
           controller.signal,
         )) {
           if (firstChunk) {
@@ -82,16 +80,25 @@ export function SageChatPanel({ section, onUpgradeRequired }: Props) {
             setIsSending(false);
             firstChunk = false;
           }
-          if (chunk.conversationId && !cid) {
-            cid = chunk.conversationId;
-            setConvId(cid);
-          }
-          if (chunk.thinking) setIsThinking(true);
-          if (chunk.action) setIsThinking(false);
           if (chunk.text) {
             setIsThinking(false);
             assistantText += chunk.text;
             setStreamingContent((prev) => prev + chunk.text);
+          }
+          if (chunk.sectionData) {
+            // Sage distilled the conversation into structured data and
+            // saved it server-side; pull it into the form and the hub.
+            queryClient.invalidateQueries({
+              queryKey: ["life-architecture"],
+            });
+            showToast(`Sage shaped ${section.label} — check "Shape it".`, {
+              variant: "success",
+            });
+            if (Platform.OS !== "web") {
+              Haptics.notificationAsync(
+                Haptics.NotificationFeedbackType.Success,
+              ).catch(() => {});
+            }
           }
           if (chunk.error) {
             showToast(chunk.error || "Sage is unavailable right now.", {
@@ -101,18 +108,17 @@ export function SageChatPanel({ section, onUpgradeRequired }: Props) {
           if (chunk.done) {
             setIsStreaming(false);
             setIsThinking(false);
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: `a-${Date.now()}`,
-                role: "assistant",
-                content: assistantText,
-              },
-            ]);
+            if (assistantText.trim()) {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `a-${Date.now()}`,
+                  role: "assistant",
+                  content: assistantText,
+                },
+              ]);
+            }
             setStreamingContent("");
-            queryClient.invalidateQueries({
-              queryKey: ["coach", "conversations"],
-            });
           }
         }
       } catch (err) {
@@ -120,7 +126,7 @@ export function SageChatPanel({ section, onUpgradeRequired }: Props) {
           err instanceof Error &&
           (err.name === "AbortError" || /abort/i.test(err.message));
         if (!aborted) {
-          if (err instanceof ApiError && err.status === 402) {
+          if (isPaymentRequiredError(err)) {
             onUpgradeRequired?.();
           } else {
             showToast(
@@ -129,6 +135,8 @@ export function SageChatPanel({ section, onUpgradeRequired }: Props) {
                 : "Couldn't reach Sage right now.",
               { variant: "error" },
             );
+            // Hand a failed message back to the composer.
+            if (!isInitial) setInput(message);
           }
         }
       } finally {
@@ -139,23 +147,51 @@ export function SageChatPanel({ section, onUpgradeRequired }: Props) {
         setStreamingContent("");
       }
     },
-    [convId, currentPage, queryClient, showToast, onUpgradeRequired],
+    [sectionNumber, section.label, queryClient, showToast, onUpgradeRequired],
   );
 
-  // Prime conversation with the section-specific opening prompt.
+  // Restore the persistent server-side conversation; if this section
+  // has never been opened, ask Sage to open it for real.
   useEffect(() => {
     if (primed) return;
     setPrimed(true);
-    setIsSending(true);
-    setMessages([
-      {
-        id: `a-prime-${Date.now()}`,
-        role: "assistant",
-        content: section.sagePrompt,
-      },
-    ]);
-    setIsSending(false);
-  }, [primed, section.sagePrompt]);
+    let cancelled = false;
+    (async () => {
+      setIsSending(true);
+      try {
+        const res = await lifeArchitectureApi.getSection(sectionNumber);
+        if (cancelled) return;
+        const history = (res?.section?.conversationHistory ?? []).filter(
+          (m) => typeof m?.content === "string" && m.content.trim(),
+        );
+        if (history.length > 0) {
+          setMessages(
+            history.map((m, i) => ({
+              id: `h-${i}`,
+              role: m.role,
+              content: m.content,
+            })),
+          );
+          setIsSending(false);
+          return;
+        }
+      } catch (err) {
+        if (cancelled) return;
+        if (isPaymentRequiredError(err)) {
+          setIsSending(false);
+          onUpgradeRequired?.();
+          return;
+        }
+        // History fetch failing isn't fatal - fall through to opening.
+      }
+      if (!cancelled) {
+        sendRaw("(begin)", true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [primed, sectionNumber, sendRaw, onUpgradeRequired]);
 
   const handleSend = useCallback(() => {
     const trimmed = input.trim();

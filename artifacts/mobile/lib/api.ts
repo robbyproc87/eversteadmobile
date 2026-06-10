@@ -1070,6 +1070,23 @@ export const EMPTY_LIFE_ARCHITECTURE: LifeArchitectureData = {
   vision: { narrative: "" },
 };
 
+export interface LASectionRecord {
+  id: string;
+  sectionNumber: number;
+  sectionType: string;
+  status: string;
+  conversationHistory: Array<{ role: string; content: string }>;
+  structuredData: unknown;
+}
+
+export interface LAChatChunk {
+  text?: string;
+  sectionData?: unknown;
+  done?: boolean;
+  sectionSaved?: boolean;
+  error?: string;
+}
+
 export const lifeArchitectureApi = {
   get: () =>
     apiFetch<LifeArchitectureSnapshot | null>("/life-architecture").catch(
@@ -1084,6 +1101,118 @@ export const lifeArchitectureApi = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+
+  getSection: (sectionNumber: number) =>
+    apiFetch<{ section: LASectionRecord }>(
+      `/life-architecture/section/${sectionNumber}`,
+    ).catch((err) => {
+      if (err instanceof ApiError && err.status === 404) return null;
+      throw err;
+    }),
+
+  /**
+   * Section-aware Sage conversation: the server holds the persistent
+   * per-section history, applies the section prompt, and can capture
+   * structured data via its save_section_data tool ({sectionData}
+   * chunks). Same SSE transport pattern as coach chat.
+   */
+  async *streamSectionChat(
+    body: { sectionNumber: number; message: string; isInitial?: boolean },
+    signal?: AbortSignal,
+  ): AsyncGenerator<LAChatChunk> {
+    const { headers, preview } = await getAuthHeaders();
+    if (preview) {
+      throw new PreviewAuthError();
+    }
+    const doStreamFetch = async (authHeaders: Record<string, string>) => {
+      try {
+        return (await expoFetch(`${API_BASE}/life-architecture/chat`, {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify(body),
+          signal,
+        })) as unknown as Response;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Network request failed";
+        throw new ApiError(`Network error: ${msg}`, 0, "Network Error");
+      }
+    };
+
+    let res = await doStreamFetch(headers);
+    if (res.status === 401) {
+      const { data, error } = await supabase.auth.refreshSession();
+      const newToken = data?.session?.access_token;
+      if (!error && newToken && newToken !== PREVIEW_TOKEN) {
+        res = await doStreamFetch({
+          ...headers,
+          Authorization: `Bearer ${newToken}`,
+        });
+      }
+    }
+
+    if (!res.ok) {
+      let text = "";
+      try {
+        text = await res.text();
+      } catch {
+        // ignore
+      }
+      let parsed: unknown = text;
+      if (text) {
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          // keep as text
+        }
+      }
+      if (res.status === 402) {
+        throw new PaymentRequiredError(
+          "life_architecture_edit",
+          extractErrorMessage(parsed, "Life Architecture is a Pro feature."),
+        );
+      }
+      throw new ApiError(
+        extractErrorMessage(parsed, `Sage error: ${res.status}`),
+        res.status,
+        res.statusText,
+        parsed,
+      );
+    }
+
+    const reader = (res.body as unknown as ReadableStream<Uint8Array> | null)?.getReader();
+    if (!reader) {
+      throw new ApiError("No response body for stream", 0, "Stream Error");
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() ?? "";
+        for (const evt of events) {
+          const trimmed = evt.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          const payload = trimmed.slice(5).trimStart();
+          if (!payload) continue;
+          try {
+            yield JSON.parse(payload) as LAChatChunk;
+          } catch {
+            // ignore parse errors for stray lines
+          }
+        }
+      }
+    } finally {
+      try {
+        await reader.cancel();
+      } catch {
+        // ignore
+      }
+    }
+  },
 };
 
 // ---------- Growth Library helpers ----------

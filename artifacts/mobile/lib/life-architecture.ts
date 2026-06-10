@@ -112,6 +112,13 @@ export function getSection(id: string): SectionMeta {
   return SECTIONS.find((s) => s.id === id) ?? SECTIONS[0];
 }
 
+/** Server section numbers (1-6) follow the SECTIONS order, which
+ *  matches web's SECTION_METADATA numbering. */
+export function sectionNumberFor(id: SectionId): number {
+  const index = SECTIONS.findIndex((s) => s.id === id);
+  return index >= 0 ? index + 1 : 1;
+}
+
 export function isSectionComplete(
   data: LifeArchitectureData,
   id: SectionId,
