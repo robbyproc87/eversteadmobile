@@ -33,45 +33,19 @@ import { MEDITATION_TECHNIQUES } from "@/lib/meditation-techniques";
 import PostSessionReview, {
   type PostSessionMetrics,
 } from "@/components/meditation/PostSessionReview";
-import { supabase } from "@/lib/supabase";
+import {
+  AMBIENT_SOUNDS,
+  getAmbientSoundUrl,
+  type AmbientSound,
+} from "@/lib/ambient-sounds";
 import { MenuIcon } from "@/components/MenuIcon";
 import { PreviewEmptyState } from "@/components/PreviewEmptyState";
-
-type FeatherIconName = React.ComponentProps<typeof Feather>["name"];
-
-interface AmbientSound {
-  id: string;
-  name: string;
-  icon: FeatherIconName;
-  storagePath: string | null;
-}
-
-const AMBIENT_SOUNDS: AmbientSound[] = [
-  { id: "none", name: "None", icon: "volume-x", storagePath: null },
-  { id: "rain", name: "Rain", icon: "cloud-rain", storagePath: "rain.mp3" },
-  { id: "ocean", name: "Ocean", icon: "wind", storagePath: "ocean.mp3" },
-  { id: "forest", name: "Forest", icon: "feather", storagePath: "forest.mp3" },
-  { id: "bowls", name: "Bowls", icon: "circle", storagePath: "bowls.mp3" },
-  { id: "white-noise", name: "White Noise", icon: "radio", storagePath: "white-noise.mp3" },
-  { id: "stream", name: "Stream", icon: "droplet", storagePath: "stream.mp3" },
-];
 
 const DURATION_PRESETS = [
   { label: "5 min", seconds: 300 },
   { label: "10 min", seconds: 600 },
   { label: "20 min", seconds: 1200 },
 ];
-
-function getAmbientSoundUrl(storagePath: string): string | null {
-  try {
-    const { data } = supabase.storage
-      .from("ambient-sounds")
-      .getPublicUrl(storagePath);
-    return data?.publicUrl ?? null;
-  } catch {
-    return null;
-  }
-}
 
 function formatTime(totalSeconds: number): string {
   const safe = Math.max(0, Math.floor(totalSeconds));

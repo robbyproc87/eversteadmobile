@@ -16,7 +16,14 @@ import {
 } from "react-native";
 
 import Colors from "@/constants/colors";
+import {
+  AMBIENT_SOUNDS,
+  getAmbientSoundUrl,
+} from "@/lib/ambient-sounds";
 import { api, type GeneratedMeditationDetail } from "@/lib/api";
+
+// Ambient bed sits well under the voice.
+const BED_VOLUME = 0.35;
 
 interface Props {
   meditationId: string | null;
@@ -91,6 +98,63 @@ export default function GeneratedMeditationPlayer({
   const [loadError, setLoadError] = useState(false);
   const barWidthRef = useRef(1);
 
+  // Ambient bed mixed under the voice, matching the web player's
+  // two-channel mixer.
+  const [ambientId, setAmbientId] = useState("none");
+  const bedRef = useRef<Audio.Sound | null>(null);
+  const bedTokenRef = useRef(0);
+
+  const stopBed = useCallback(async () => {
+    bedTokenRef.current += 1;
+    const bed = bedRef.current;
+    bedRef.current = null;
+    if (!bed) return;
+    try {
+      await bed.stopAsync();
+    } catch {}
+    try {
+      await bed.unloadAsync();
+    } catch {}
+  }, []);
+
+  const selectAmbient = useCallback(
+    async (id: string, playNow: boolean) => {
+      if (Platform.OS !== "web") Haptics.selectionAsync();
+      setAmbientId(id);
+      const token = ++bedTokenRef.current;
+      const prev = bedRef.current;
+      bedRef.current = null;
+      if (prev) {
+        try {
+          await prev.stopAsync();
+        } catch {}
+        try {
+          await prev.unloadAsync();
+        } catch {}
+      }
+      const sound = AMBIENT_SOUNDS.find((s) => s.id === id);
+      if (!sound?.storagePath) return;
+      const url = getAmbientSoundUrl(sound.storagePath);
+      if (!url) return;
+      try {
+        const { sound: bed } = await Audio.Sound.createAsync(
+          { uri: url },
+          { isLooping: true, volume: BED_VOLUME, shouldPlay: playNow },
+        );
+        if (token !== bedTokenRef.current) {
+          try {
+            await bed.unloadAsync();
+          } catch {}
+          return;
+        }
+        bedRef.current = bed;
+      } catch {
+        // ambient bed is best-effort
+      }
+    },
+    [],
+  );
+
   const teardown = useCallback(async () => {
     tokenRef.current += 1;
     const s = soundRef.current;
@@ -100,6 +164,7 @@ export default function GeneratedMeditationPlayer({
     setPositionMs(0);
     setDurationMs(0);
     deactivateKeepAwake().catch(() => {});
+    await stopBed();
     if (!s) return;
     try {
       await s.stopAsync();
@@ -107,7 +172,18 @@ export default function GeneratedMeditationPlayer({
     try {
       await s.unloadAsync();
     } catch {}
-  }, []);
+  }, [stopBed]);
+
+  // Keep the bed in lockstep with the voice.
+  useEffect(() => {
+    const bed = bedRef.current;
+    if (!bed) return;
+    if (isPlaying) {
+      bed.playAsync().catch(() => {});
+    } else {
+      bed.pauseAsync().catch(() => {});
+    }
+  }, [isPlaying]);
 
   // Load the voice track whenever a fresh signed URL arrives.
   useEffect(() => {
@@ -310,6 +386,43 @@ export default function GeneratedMeditationPlayer({
                   -{formatTime(Math.max(0, durationMs - positionMs))}
                 </Text>
               </View>
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.ambientRow}
+                style={{ alignSelf: "stretch", flexGrow: 0 }}
+              >
+                {AMBIENT_SOUNDS.map((sound) => {
+                  const selected = ambientId === sound.id;
+                  return (
+                    <Pressable
+                      key={sound.id}
+                      onPress={() => selectAmbient(sound.id, isPlaying)}
+                      style={({ pressed }) => [
+                        styles.ambientChip,
+                        selected && styles.ambientChipSelected,
+                        pressed && { opacity: 0.7 },
+                      ]}
+                      accessibilityLabel={`Ambient sound: ${sound.name}`}
+                    >
+                      <Feather
+                        name={sound.icon}
+                        size={14}
+                        color={selected ? Colors.goldDark : Colors.textSecondary}
+                      />
+                      <Text
+                        style={[
+                          styles.ambientChipText,
+                          selected && { color: Colors.goldDark },
+                        ]}
+                      >
+                        {sound.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
             </View>
 
             <ScrollView
@@ -416,6 +529,31 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
     flexDirection: "row",
     justifyContent: "space-between",
+  },
+  ambientRow: {
+    flexDirection: "row",
+    gap: 8,
+    paddingVertical: 2,
+  },
+  ambientChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    backgroundColor: Colors.card,
+  },
+  ambientChipSelected: {
+    borderColor: Colors.gold,
+    backgroundColor: Colors.goldLight,
+  },
+  ambientChipText: {
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
+    color: Colors.textSecondary,
   },
   timeLabel: {
     fontSize: 12,
