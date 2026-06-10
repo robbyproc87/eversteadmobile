@@ -30,6 +30,18 @@ export interface WeeklyScorePoint {
   score: number | null;
 }
 
+export interface DailyMetric {
+  id: string;
+  date: string;
+  sleepH: number | null;
+  steps: number | null;
+  weightKg: number | null;
+  hrv: number | null;
+  moodScore: number | null;
+  energy: number | null;
+  stress: number | null;
+}
+
 export interface ActivityItem {
   id: string;
   type: string;
@@ -325,6 +337,21 @@ export const api = {
   getDashboardStats: () => apiFetch<DashboardStats>("/dashboard/stats"),
   getTrends: (rangeDays: number) =>
     apiFetch<TrendDataPoint[]>(`/trends?range=${rangeDays}`),
+  getDailyMetric: (date: string) =>
+    apiFetch<DailyMetric | null>(
+      `/metrics/daily?date=${encodeURIComponent(date)}`,
+    ),
+  upsertDailyMetric: (input: {
+    date: string;
+    sleepH?: number | null;
+    steps?: number | null;
+    energy?: number | null;
+    stress?: number | null;
+  }) =>
+    apiFetch<DailyMetric>("/metrics/daily", {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
   getWeeklyScores: (rangeDays: number) =>
     apiFetch<{ scores: WeeklyScorePoint[] }>(
       `/trends/weekly-scores?range=${rangeDays}`,

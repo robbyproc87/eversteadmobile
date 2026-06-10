@@ -59,12 +59,14 @@
     "@supabase/supabase-js": "^2.100.0",
     "expo-auth-session": "^7.0.11",
     "expo-av": "^16.0.8",
+    "expo-build-properties": "~1.0.8",
     "expo-file-system": "~19.0.23",
     "expo-keep-awake": "^15.0.8",
     "expo-print": "~15.0.8",
     "expo-secure-store": "^15.0.8",
     "expo-sharing": "~14.0.8",
     "perfect-freehand": "^1.2.3",
+    "react-native-health-connect": "^3.4.0",
     "react-native-view-shot": "^4.0.3"
   }
 }

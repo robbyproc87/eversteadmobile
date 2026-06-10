@@ -25,6 +25,7 @@ import { useToast } from "@/contexts/ToastContext";
 import Colors from "@/constants/colors";
 import { api, isPreviewAuthError } from "@/lib/api";
 import { PreviewEmptyState } from "@/components/PreviewEmptyState";
+import { HealthsetCard } from "@/components/HealthsetCard";
 import type {
   CalendarEvent,
   DailyPlanData,
@@ -557,25 +558,6 @@ function WentWellSection({ dailyPlanId, initial, onSaved }: WentWellSectionProps
           ) : null}
         </View>
       ))}
-    </View>
-  );
-}
-
-function HealthsetPlaceholderCard() {
-  return (
-    <View style={[styles.card, styles.healthsetCard]}>
-      <View style={styles.healthsetHeader}>
-        <View style={[styles.sectionIcon, { backgroundColor: Colors.goldLight }]}>
-          <Feather name="activity" size={14} color={Colors.goldDark} />
-        </View>
-        <Text style={styles.sectionTitle}>Healthset</Text>
-        <View style={styles.healthsetBadge}>
-          <Text style={styles.healthsetBadgeText}>COMING SOON</Text>
-        </View>
-      </View>
-      <Text style={styles.healthsetBody}>
-        Track sleep, energy, and movement to see how your body shapes your day.
-      </Text>
     </View>
   );
 }
@@ -1866,7 +1848,7 @@ export default function PlannerScreen() {
               onChange={invalidatePlan}
             />
 
-            <HealthsetPlaceholderCard />
+            <HealthsetCard />
           </>
         )}
       </ScrollView>
