@@ -63,10 +63,14 @@ function formatHeaderDate(d: Date): string {
   });
 }
 
+// Monday-start week, matching the web planner (src/lib/planner-utils.ts).
+// PlannerWeek rows are keyed by weekStart, so a Sunday-start here would
+// split a cross-platform user's week data across two rows.
 function getWeekStart(d: Date): Date {
   const r = new Date(d);
   r.setHours(0, 0, 0, 0);
-  r.setDate(r.getDate() - r.getDay());
+  const day = r.getDay();
+  r.setDate(r.getDate() - day + (day === 0 ? -6 : 1));
   return r;
 }
 
