@@ -239,18 +239,34 @@ export async function apiFetch<T>(
   if (preview) {
     throw new PreviewAuthError();
   }
-  let res: Response;
-  try {
-    res = await fetch(`${API_BASE}${path}`, {
-      ...options,
-      headers: {
-        ...headers,
-        ...(options?.headers || {}),
-      },
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "Network request failed";
-    throw new ApiError(`Network error: ${msg}`, 0, "Network Error");
+
+  const doFetch = async (authHeaders: Record<string, string>) => {
+    try {
+      return await fetch(`${API_BASE}${path}`, {
+        ...options,
+        headers: {
+          ...authHeaders,
+          ...(options?.headers || {}),
+        },
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Network request failed";
+      throw new ApiError(`Network error: ${msg}`, 0, "Network Error");
+    }
+  };
+
+  let res = await doFetch(headers);
+
+  // An expired access token surfaces as a 401. Refresh once and retry;
+  // if the refresh token itself is dead, supabase clears the session and
+  // AuthGuard routes back to login instead of stranding the user on
+  // per-screen error cards.
+  if (res.status === 401) {
+    const { data, error } = await supabase.auth.refreshSession();
+    const newToken = data?.session?.access_token;
+    if (!error && newToken && newToken !== PREVIEW_TOKEN) {
+      res = await doFetch({ ...headers, Authorization: `Bearer ${newToken}` });
+    }
   }
 
   if (!res.ok) {
@@ -1297,17 +1313,32 @@ export const coachApi = {
     if (preview) {
       throw new PreviewAuthError();
     }
-    let res: Response;
-    try {
-      res = (await expoFetch(`${API_BASE}/coach/chat`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-        signal,
-      })) as unknown as Response;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Network request failed";
-      throw new ApiError(`Network error: ${msg}`, 0, "Network Error");
+    const doStreamFetch = async (authHeaders: Record<string, string>) => {
+      try {
+        return (await expoFetch(`${API_BASE}/coach/chat`, {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify(body),
+          signal,
+        })) as unknown as Response;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Network request failed";
+        throw new ApiError(`Network error: ${msg}`, 0, "Network Error");
+      }
+    };
+
+    let res = await doStreamFetch(headers);
+
+    // Same expired-token recovery as apiFetch: refresh once and retry.
+    if (res.status === 401) {
+      const { data, error } = await supabase.auth.refreshSession();
+      const newToken = data?.session?.access_token;
+      if (!error && newToken && newToken !== PREVIEW_TOKEN) {
+        res = await doStreamFetch({
+          ...headers,
+          Authorization: `Bearer ${newToken}`,
+        });
+      }
     }
 
     if (!res.ok) {

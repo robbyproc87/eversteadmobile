@@ -1,6 +1,74 @@
 import { createClient } from "@supabase/supabase-js";
 import * as SecureStore from "expo-secure-store";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
+
+// SecureStore warns and can silently fail above 2048 bytes on some Android
+// versions, and a Supabase session (two JWTs + user metadata) routinely
+// exceeds that. Values larger than CHUNK_SIZE are split across
+// `${key}.0..n` entries behind a manifest marker stored at `key`.
+// Values written by older builds (no marker) read back unchanged.
+const CHUNK_SIZE = 1800;
+const CHUNK_MARKER = "__chunked__:";
+
+function chunkCountFrom(head: string | null): number {
+  if (!head || !head.startsWith(CHUNK_MARKER)) return 0;
+  const n = parseInt(head.slice(CHUNK_MARKER.length), 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+async function getChunked(key: string): Promise<string | null> {
+  const head = await SecureStore.getItemAsync(key);
+  if (head == null || !head.startsWith(CHUNK_MARKER)) return head;
+  const count = chunkCountFrom(head);
+  if (count === 0) return null;
+  const parts = await Promise.all(
+    Array.from({ length: count }, (_, i) =>
+      SecureStore.getItemAsync(`${key}.${i}`),
+    ),
+  );
+  if (parts.some((p) => p == null)) return null;
+  return parts.join("");
+}
+
+async function setChunked(key: string, value: string): Promise<void> {
+  const prevCount = chunkCountFrom(await SecureStore.getItemAsync(key));
+  const newCount =
+    value.length <= CHUNK_SIZE ? 0 : Math.ceil(value.length / CHUNK_SIZE);
+
+  if (newCount === 0) {
+    await SecureStore.setItemAsync(key, value);
+  } else {
+    for (let i = 0; i < newCount; i++) {
+      await SecureStore.setItemAsync(
+        `${key}.${i}`,
+        value.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE),
+      );
+    }
+    // Write the manifest last so a partially written value is never visible.
+    await SecureStore.setItemAsync(key, `${CHUNK_MARKER}${newCount}`);
+  }
+
+  for (let i = newCount; i < prevCount; i++) {
+    try {
+      await SecureStore.deleteItemAsync(`${key}.${i}`);
+    } catch {
+      // stale chunk cleanup is best-effort
+    }
+  }
+}
+
+async function removeChunked(key: string): Promise<void> {
+  const head = await SecureStore.getItemAsync(key);
+  await SecureStore.deleteItemAsync(key);
+  const count = chunkCountFrom(head);
+  for (let i = 0; i < count; i++) {
+    try {
+      await SecureStore.deleteItemAsync(`${key}.${i}`);
+    } catch {
+      // best-effort
+    }
+  }
+}
 
 const ExpoSecureStoreAdapter = {
   getItem: (key: string) => {
@@ -11,7 +79,7 @@ const ExpoSecureStoreAdapter = {
         return null;
       }
     }
-    return SecureStore.getItemAsync(key);
+    return getChunked(key);
   },
   setItem: (key: string, value: string) => {
     if (Platform.OS === "web") {
@@ -20,7 +88,7 @@ const ExpoSecureStoreAdapter = {
       } catch {}
       return;
     }
-    return SecureStore.setItemAsync(key, value) as unknown as void;
+    return setChunked(key, value) as unknown as void;
   },
   removeItem: (key: string) => {
     if (Platform.OS === "web") {
@@ -29,7 +97,7 @@ const ExpoSecureStoreAdapter = {
       } catch {}
       return;
     }
-    return SecureStore.deleteItemAsync(key) as unknown as void;
+    return removeChunked(key) as unknown as void;
   },
 };
 
@@ -59,3 +127,17 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: false,
   },
 });
+
+// supabase-js's refresh timer only ticks reliably while the app is
+// foregrounded. Drive it from AppState (the documented React Native
+// pattern) so tokens refresh on resume instead of expiring mid-session.
+if (Platform.OS !== "web") {
+  AppState.addEventListener("change", (state) => {
+    if (state === "active") {
+      supabase.auth.startAutoRefresh();
+    } else {
+      supabase.auth.stopAutoRefresh();
+    }
+  });
+  supabase.auth.startAutoRefresh();
+}
