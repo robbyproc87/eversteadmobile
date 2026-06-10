@@ -14,6 +14,9 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 
+import * as Notifications from "expo-notifications";
+import { Platform } from "react-native";
+
 import { AppDrawer } from "@/components/AppDrawer";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { SageOrb } from "@/components/SageOrb";
@@ -24,6 +27,7 @@ import { DrawerProvider, useDrawer } from "@/contexts/DrawerContext";
 import { ToastProvider } from "@/contexts/ToastContext";
 import Colors from "@/constants/colors";
 import { api } from "@/lib/api";
+import { refreshRitualSchedules } from "@/lib/notifications";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -61,6 +65,21 @@ function RootLayoutContent() {
       router.replace("/onboarding");
     }
   }, [session, isLoginScreen, isOnboarding, onboardingQuery.data, router]);
+
+  // Top up the 7-day ritual notification queue and route taps.
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    refreshRitualSchedules();
+    const sub = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        const url = response.notification.request.content.data?.url;
+        if (typeof url === "string") {
+          router.push(url as never);
+        }
+      },
+    );
+    return () => sub.remove();
+  }, [router]);
 
   return (
     <>

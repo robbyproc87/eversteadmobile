@@ -62,6 +62,7 @@
     "expo-build-properties": "~1.0.8",
     "expo-file-system": "~19.0.23",
     "expo-keep-awake": "^15.0.8",
+    "expo-notifications": "~0.32.12",
     "expo-print": "~15.0.8",
     "expo-secure-store": "^15.0.8",
     "expo-sharing": "~14.0.8",

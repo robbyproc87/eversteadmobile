@@ -18,6 +18,7 @@ import {
 } from "react-native";
 
 import { AuthGuard } from "@/components/AuthGuard";
+import { RitualsSection } from "@/components/RitualsSection";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
@@ -306,6 +307,9 @@ function SettingsContent() {
           managing={portalLoading}
         />
       </View>
+
+      <SectionHeader label="Daily rituals" />
+      <RitualsSection />
 
       <SectionHeader label="Integrations" />
       <View style={styles.sectionCard}>
