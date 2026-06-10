@@ -12,7 +12,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
@@ -31,6 +30,9 @@ interface Props {
   visible: boolean;
   onClose: () => void;
   onGenerated?: (m: GeneratedMeditationDetail) => void;
+  /** Pre-select a technique (must be one of the server's valid types). */
+  initialType?: string;
+  initialDurationS?: number;
 }
 
 const DURATIONS: Array<{ value: number; label: string }> = [
@@ -39,13 +41,16 @@ const DURATIONS: Array<{ value: number; label: string }> = [
   { value: 1200, label: "20 min" },
 ];
 
+// Must match VALID_TYPES in the web /api/meditation/generate route.
+// The previous presets (Calm, Focus, Sleep, ...) and the custom
+// free-text field were all rejected server-side with a 400.
 const TYPE_PRESETS = [
-  "Calm",
-  "Focus",
-  "Sleep",
-  "Gratitude",
-  "Stress Relief",
-  "Energy",
+  "Box Breathing",
+  "4-7-8 Breathing",
+  "Body Scan",
+  "Focused Attention",
+  "Loving-Kindness",
+  "Open Awareness",
 ];
 
 function haptic() {
@@ -72,20 +77,32 @@ function PulsingOrb() {
   );
 }
 
-export default function GenerateSessionDialog({ visible, onClose, onGenerated }: Props) {
+export default function GenerateSessionDialog({
+  visible,
+  onClose,
+  onGenerated,
+  initialType,
+  initialDurationS,
+}: Props) {
   const queryClient = useQueryClient();
   const { showError, showSuccess } = useToast();
-  const [meditationType, setMeditationType] = useState("Calm");
-  const [customType, setCustomType] = useState("");
+  const [meditationType, setMeditationType] = useState(TYPE_PRESETS[0]);
   const [duration, setDuration] = useState(600);
 
   useEffect(() => {
     if (visible) {
-      setMeditationType("Calm");
-      setCustomType("");
-      setDuration(600);
+      setMeditationType(
+        initialType && TYPE_PRESETS.includes(initialType)
+          ? initialType
+          : TYPE_PRESETS[0],
+      );
+      setDuration(
+        initialDurationS && [300, 600, 1200].includes(initialDurationS)
+          ? initialDurationS
+          : 600,
+      );
     }
-  }, [visible]);
+  }, [visible, initialType, initialDurationS]);
 
   const plan = usePlan();
   const [upgradeOpen, setUpgradeOpen] = useState(false);
@@ -93,7 +110,7 @@ export default function GenerateSessionDialog({ visible, onClose, onGenerated }:
   const generateMutation = useMutation({
     mutationFn: () =>
       api.generateMeditation({
-        meditationType: customType.trim() || meditationType,
+        meditationType,
         durationS: duration,
       }),
     onSuccess: (m) => {
@@ -126,7 +143,7 @@ export default function GenerateSessionDialog({ visible, onClose, onGenerated }:
               <PulsingOrb />
               <Text style={styles.generatingTitle}>Generating your session…</Text>
               <Text style={styles.generatingSubtitle}>
-                Crafting a {Math.round(duration / 60)}-minute {customType.trim() || meditationType.toLowerCase()} meditation
+                Crafting a {Math.round(duration / 60)}-minute {meditationType} session
               </Text>
             </View>
           ) : (
@@ -146,18 +163,17 @@ export default function GenerateSessionDialog({ visible, onClose, onGenerated }:
                     onPress={() => {
                       haptic();
                       setMeditationType(t);
-                      setCustomType("");
                     }}
                     style={({ pressed }) => [
                       styles.typeChip,
-                      meditationType === t && !customType.trim() && styles.typeChipActive,
+                      meditationType === t && styles.typeChipActive,
                       pressed && { opacity: 0.85 },
                     ]}
                   >
                     <Text
                       style={[
                         styles.typeChipText,
-                        meditationType === t && !customType.trim() && styles.typeChipTextActive,
+                        meditationType === t && styles.typeChipTextActive,
                       ]}
                     >
                       {t}
@@ -165,13 +181,6 @@ export default function GenerateSessionDialog({ visible, onClose, onGenerated }:
                   </Pressable>
                 ))}
               </View>
-              <TextInput
-                value={customType}
-                onChangeText={setCustomType}
-                placeholder="Or describe a custom focus…"
-                placeholderTextColor={Colors.textTertiary}
-                style={styles.input}
-              />
 
               <Text style={styles.fieldLabel}>Duration</Text>
               <View style={styles.durationRow}>

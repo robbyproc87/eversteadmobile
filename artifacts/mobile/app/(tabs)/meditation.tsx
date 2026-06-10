@@ -29,6 +29,7 @@ import TrendsChart from "@/components/meditation/TrendsChart";
 import GenerateSessionDialog from "@/components/meditation/GenerateSessionDialog";
 import PreSessionCheckin from "@/components/meditation/PreSessionCheckin";
 import GeneratedMeditationPlayer from "@/components/meditation/GeneratedMeditationPlayer";
+import { MEDITATION_TECHNIQUES } from "@/lib/meditation-techniques";
 import PostSessionReview, {
   type PostSessionMetrics,
 } from "@/components/meditation/PostSessionReview";
@@ -110,6 +111,10 @@ export default function MeditationScreen() {
   const ambientTokenRef = useRef(0);
 
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
+  const [generateInitial, setGenerateInitial] = useState<{
+    type: string;
+    durationS: number;
+  } | null>(null);
   const [playerMeditationId, setPlayerMeditationId] = useState<string | null>(
     null,
   );
@@ -674,6 +679,68 @@ export default function MeditationScreen() {
           )}
         </View>
 
+        {/* Technique library */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Feather name="book-open" size={18} color={Colors.gold} />
+            <Text style={styles.cardTitle}>Techniques</Text>
+          </View>
+          <View style={{ gap: 8 }}>
+            {MEDITATION_TECHNIQUES.map((t) => (
+              <View key={t.type} style={styles.techniqueRow}>
+                <Pressable
+                  onPress={() => {
+                    if (isTimerActive) {
+                      showToast("Finish your current session first");
+                      return;
+                    }
+                    if (Platform.OS !== "web") Haptics.selectionAsync();
+                    setSelectedDuration(t.durationS);
+                    setPreCheckinOpen(true);
+                  }}
+                  style={({ pressed }) => [
+                    styles.techniqueMain,
+                    pressed && { opacity: 0.7 },
+                  ]}
+                  accessibilityLabel={`Start ${t.type}`}
+                >
+                  <View style={styles.techniqueIconWrap}>
+                    <Feather name={t.icon} size={16} color={Colors.gold} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.techniqueTitleRow}>
+                      <Text style={styles.techniqueTitle}>{t.type}</Text>
+                      <Text style={styles.techniqueDuration}>
+                        {Math.round(t.durationS / 60)} min
+                      </Text>
+                    </View>
+                    <Text style={styles.techniqueDesc} numberOfLines={2}>
+                      {t.description}
+                    </Text>
+                  </View>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    if (Platform.OS !== "web") {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }
+                    setGenerateInitial({ type: t.type, durationS: t.durationS });
+                    setGenerateDialogOpen(true);
+                  }}
+                  style={({ pressed }) => [
+                    styles.iconButton,
+                    pressed && { opacity: 0.6 },
+                  ]}
+                  hitSlop={8}
+                  accessibilityLabel={`Generate ${t.type} session`}
+                >
+                  <Feather name="zap" size={16} color={Colors.gold} />
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        </View>
+
         {/* My Meditations (AI-generated) */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
@@ -841,7 +908,16 @@ export default function MeditationScreen() {
 
       <GenerateSessionDialog
         visible={generateDialogOpen}
-        onClose={() => setGenerateDialogOpen(false)}
+        initialType={generateInitial?.type}
+        initialDurationS={generateInitial?.durationS}
+        onClose={() => {
+          setGenerateDialogOpen(false);
+          setGenerateInitial(null);
+        }}
+        onGenerated={(m) => {
+          // Straight into the player - generate and listen in one motion.
+          setPlayerMeditationId(m.id);
+        }}
       />
 
       <Modal
@@ -1216,6 +1292,48 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
+  },
+  techniqueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  techniqueMain: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 6,
+  },
+  techniqueIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: Colors.goldLight,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  techniqueTitleRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 8,
+  },
+  techniqueTitle: {
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+    color: Colors.dark,
+  },
+  techniqueDuration: {
+    fontSize: 11,
+    fontFamily: "Inter_500Medium",
+    color: Colors.textTertiary,
+  },
+  techniqueDesc: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    color: Colors.textSecondary,
+    lineHeight: 16,
+    marginTop: 1,
   },
   emptyInline: {
     fontSize: 13,
