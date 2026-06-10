@@ -28,6 +28,7 @@ import DailyMindfulnessCheckin from "@/components/meditation/DailyMindfulnessChe
 import TrendsChart from "@/components/meditation/TrendsChart";
 import GenerateSessionDialog from "@/components/meditation/GenerateSessionDialog";
 import PreSessionCheckin from "@/components/meditation/PreSessionCheckin";
+import GeneratedMeditationPlayer from "@/components/meditation/GeneratedMeditationPlayer";
 import PostSessionReview, {
   type PostSessionMetrics,
 } from "@/components/meditation/PostSessionReview";
@@ -109,6 +110,9 @@ export default function MeditationScreen() {
   const ambientTokenRef = useRef(0);
 
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
+  const [playerMeditationId, setPlayerMeditationId] = useState<string | null>(
+    null,
+  );
   const [ambientUpgradeOpen, setAmbientUpgradeOpen] = useState(false);
   const plan = usePlan();
   const [pendingDurationS, setPendingDurationS] = useState(0);
@@ -136,6 +140,8 @@ export default function MeditationScreen() {
     mutationFn: (input: {
       durationS: number;
       rating?: number;
+      meditationType?: string;
+      generatedMeditationId?: string;
       tensionBefore?: number;
       stressBefore?: number;
     }) => api.createMeditationSession(input),
@@ -718,13 +724,22 @@ export default function MeditationScreen() {
                   </View>
                   <Pressable
                     onPress={() => {
-                      showToast("Open the web app to play this session");
+                      if (isTimerActive) {
+                        showToast("Finish your current session first");
+                        return;
+                      }
+                      if (Platform.OS !== "web") {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      }
+                      stopAmbient();
+                      setPlayerMeditationId(m.id);
                     }}
                     style={({ pressed }) => [
                       styles.iconButton,
                       pressed && { opacity: 0.6 },
                     ]}
                     hitSlop={8}
+                    accessibilityLabel={`Play ${m.meditationType}`}
                   >
                     <Feather name="play" size={18} color={Colors.gold} />
                   </Pressable>
@@ -872,6 +887,20 @@ export default function MeditationScreen() {
           setStressBefore(sb);
           setPreCheckinOpen(false);
           beginTimer();
+        }}
+      />
+
+      <GeneratedMeditationPlayer
+        meditationId={playerMeditationId}
+        onClose={() => setPlayerMeditationId(null)}
+        onComplete={({ durationS, meditationType, generatedMeditationId }) => {
+          setPlayerMeditationId(null);
+          setPendingDurationS(durationS);
+          createSession.mutate({
+            durationS,
+            meditationType,
+            generatedMeditationId,
+          });
         }}
       />
 
