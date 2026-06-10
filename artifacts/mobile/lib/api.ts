@@ -748,7 +748,12 @@ export const api = {
       cached?: boolean;
     }>("/coach/daily-content"),
 
-  generateMeditation: (input: { meditationType: string; durationS: number; voice?: string }) =>
+  generateMeditation: (input: {
+    meditationType: string;
+    durationS: number;
+    voice?: string;
+    focus?: string;
+  }) =>
     apiFetch<GeneratedMeditationDetail>("/meditation/generate", {
       method: "POST",
       body: JSON.stringify({ voice: "nova", ...input }),

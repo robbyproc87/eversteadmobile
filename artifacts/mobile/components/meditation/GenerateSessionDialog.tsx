@@ -12,6 +12,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 
@@ -88,6 +89,7 @@ export default function GenerateSessionDialog({
   const { showError, showSuccess } = useToast();
   const [meditationType, setMeditationType] = useState(TYPE_PRESETS[0]);
   const [duration, setDuration] = useState(600);
+  const [focus, setFocus] = useState("");
 
   useEffect(() => {
     if (visible) {
@@ -101,6 +103,7 @@ export default function GenerateSessionDialog({
           ? initialDurationS
           : 600,
       );
+      setFocus("");
     }
   }, [visible, initialType, initialDurationS]);
 
@@ -112,6 +115,7 @@ export default function GenerateSessionDialog({
       api.generateMeditation({
         meditationType,
         durationS: duration,
+        ...(focus.trim() ? { focus: focus.trim().slice(0, 280) } : {}),
       }),
     onSuccess: (m) => {
       queryClient.invalidateQueries({ queryKey: ["meditation", "generated"] });
@@ -181,6 +185,20 @@ export default function GenerateSessionDialog({
                   </Pressable>
                 ))}
               </View>
+
+              <Text style={styles.fieldLabel}>
+                What should this session hold?{" "}
+                <Text style={styles.fieldLabelHint}>(optional)</Text>
+              </Text>
+              <TextInput
+                value={focus}
+                onChangeText={setFocus}
+                placeholder={'In your own words — "the presentation tomorrow"…'}
+                placeholderTextColor={Colors.textTertiary}
+                style={styles.input}
+                multiline
+                maxLength={280}
+              />
 
               <Text style={styles.fieldLabel}>Duration</Text>
               <View style={styles.durationRow}>
@@ -265,6 +283,10 @@ const styles = StyleSheet.create({
   fieldLabel: {
     fontSize: 11, fontFamily: "Inter_700Bold", letterSpacing: 1,
     color: Colors.textSecondary, marginTop: 12, marginBottom: 8,
+  },
+  fieldLabelHint: {
+    fontSize: 11, fontFamily: "Inter_400Regular", letterSpacing: 0,
+    color: Colors.textTertiary, textTransform: "none",
   },
   typeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   typeChip: {
