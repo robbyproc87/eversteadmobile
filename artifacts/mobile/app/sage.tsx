@@ -14,7 +14,9 @@ import {
   Alert,
   Animated,
   Easing,
+  FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -256,6 +258,7 @@ export default function SageScreen() {
     [],
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [chatLocked, setChatLocked] = useState(false);
   const [input, setInput] = useState("");
 
@@ -630,6 +633,19 @@ export default function SageScreen() {
           </View>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
             <Pressable
+              onPress={() => {
+                if (Platform.OS !== "web") Haptics.selectionAsync();
+                setHistoryOpen(true);
+              }}
+              style={({ pressed }) => [
+                styles.closeButton,
+                pressed && { opacity: 0.6 },
+              ]}
+              accessibilityLabel="Conversation history"
+            >
+              <Feather name="clock" size={18} color={Colors.textSecondary} />
+            </Pressable>
+            <Pressable
               onPress={handleDeleteActiveConversation}
               disabled={!activeConvId || deletingConv}
               style={({ pressed }) => [
@@ -861,12 +877,192 @@ export default function SageScreen() {
           visible={settingsOpen}
           onClose={() => setSettingsOpen(false)}
         />
+
+        <Modal
+          visible={historyOpen}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setHistoryOpen(false)}
+        >
+          <View style={styles.historyContainer}>
+            <View style={styles.historyHeader}>
+              <Text style={styles.historyTitle}>
+                Conversations with {activeCoach.name}
+              </Text>
+              <Pressable
+                onPress={() => setHistoryOpen(false)}
+                hitSlop={10}
+                style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+                accessibilityLabel="Close history"
+              >
+                <Feather name="x" size={22} color={Colors.textSecondary} />
+              </Pressable>
+            </View>
+
+            <Pressable
+              onPress={() => {
+                if (Platform.OS !== "web") {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }
+                if (abortRef.current) {
+                  abortRef.current.abort();
+                  abortRef.current = null;
+                }
+                setOptimisticMessages([]);
+                setStreamingContent("");
+                setActiveConvId(null);
+                setHistoryOpen(false);
+              }}
+              style={({ pressed }) => [
+                styles.historyNewBtn,
+                pressed && { opacity: 0.85 },
+              ]}
+            >
+              <Feather name="plus" size={16} color={Colors.dark} />
+              <Text style={styles.historyNewBtnText}>New conversation</Text>
+            </Pressable>
+
+            <FlatList
+              data={conversations.filter(
+                (c) => c.coachType === activeCoachId,
+              )}
+              keyExtractor={(c) => c.id}
+              contentContainerStyle={{ paddingBottom: 24 }}
+              ListEmptyComponent={
+                <Text style={styles.historyEmpty}>
+                  No conversations with {activeCoach.name} yet.
+                </Text>
+              }
+              renderItem={({ item }) => {
+                const isCurrent = item.id === activeConvId;
+                return (
+                  <Pressable
+                    onPress={() => {
+                      if (Platform.OS !== "web") Haptics.selectionAsync();
+                      if (abortRef.current) {
+                        abortRef.current.abort();
+                        abortRef.current = null;
+                      }
+                      setOptimisticMessages([]);
+                      setStreamingContent("");
+                      setActiveConvId(item.id);
+                      setHistoryOpen(false);
+                    }}
+                    style={({ pressed }) => [
+                      styles.historyRow,
+                      isCurrent && styles.historyRowActive,
+                      pressed && { opacity: 0.7 },
+                    ]}
+                  >
+                    <Feather
+                      name="message-circle"
+                      size={16}
+                      color={isCurrent ? activeCoach.color : Colors.textSecondary}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.historyRowTitle} numberOfLines={1}>
+                        {item.title || "Untitled conversation"}
+                      </Text>
+                      <Text style={styles.historyRowDate}>
+                        {new Date(item.updatedAt).toLocaleDateString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </Text>
+                    </View>
+                    {isCurrent ? (
+                      <Text
+                        style={[
+                          styles.historyCurrent,
+                          { color: activeCoach.color },
+                        ]}
+                      >
+                        Current
+                      </Text>
+                    ) : null}
+                  </Pressable>
+                );
+              }}
+            />
+          </View>
+        </Modal>
       </View>
     </AuthGuard>
   );
 }
 
 const styles = StyleSheet.create({
+  historyContainer: {
+    flex: 1,
+    backgroundColor: Colors.background,
+    paddingTop: 20,
+    paddingHorizontal: 20,
+  },
+  historyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 16,
+  },
+  historyTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontFamily: "Inter_700Bold",
+    color: Colors.dark,
+  },
+  historyNewBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: Colors.gold,
+    borderRadius: 12,
+    paddingVertical: 12,
+    marginBottom: 16,
+  },
+  historyNewBtnText: {
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+    color: Colors.dark,
+  },
+  historyEmpty: {
+    fontSize: 14,
+    fontFamily: "Inter_400Regular",
+    color: Colors.textSecondary,
+    textAlign: "center",
+    marginTop: 24,
+  },
+  historyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    marginBottom: 6,
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+  },
+  historyRowActive: {
+    borderColor: Colors.gold,
+  },
+  historyRowTitle: {
+    fontSize: 14,
+    fontFamily: "Inter_500Medium",
+    color: Colors.dark,
+  },
+  historyRowDate: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    color: Colors.textTertiary,
+    marginTop: 1,
+  },
+  historyCurrent: {
+    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
+  },
   lockOverlay: {
     position: "absolute",
     left: 16,
