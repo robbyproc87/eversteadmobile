@@ -171,28 +171,32 @@ function PrioritiesSection({ dailyPlanId, initial, onSaved }: PrioritiesProps) {
   const [savingIdx, setSavingIdx] = useState<number | null>(null);
   const dirtyRef = React.useRef(false);
   const initialRef = React.useRef<string[]>(initial);
+  // Mirror of `values` that updates synchronously: blur can fire before
+  // the last onChangeText re-render, and a render-closure snapshot would
+  // drop that final keystroke.
+  const valuesRef = React.useRef<string[]>(initial);
 
   useEffect(() => {
     initialRef.current = initial;
     if (!dirtyRef.current) {
+      valuesRef.current = initial;
       setValues(initial);
     }
   }, [initial]);
 
   const handleChange = (i: number, t: string) => {
     dirtyRef.current = true;
-    setValues((prev) => {
-      const next = [...prev];
-      next[i] = t;
-      return next;
-    });
+    const next = [...valuesRef.current];
+    next[i] = t;
+    valuesRef.current = next;
+    setValues(next);
   };
 
   const handleBlur = async (i: number) => {
     if (!dailyPlanId) return;
-    if (values[i] === initialRef.current[i]) return;
+    if (valuesRef.current[i] === initialRef.current[i]) return;
     setSavingIdx(i);
-    const snapshot = [...values];
+    const snapshot = [...valuesRef.current];
     try {
       await api.savePriorities(
         dailyPlanId,
@@ -202,6 +206,7 @@ function PrioritiesSection({ dailyPlanId, initial, onSaved }: PrioritiesProps) {
       dirtyRef.current = false;
       onSaved();
     } catch (e) {
+      valuesRef.current = initialRef.current;
       setValues(initialRef.current);
       dirtyRef.current = false;
       showError(formatSaveError("priority", e));
@@ -256,6 +261,7 @@ function GratitudesSection({
   const { showError } = useToast();
   const [items, setItems] = useState(initial);
   const [drafts, setDrafts] = useState<Record<number, string>>({});
+  const submittingSlotsRef = React.useRef<Set<number>>(new Set());
   const [saving, setSaving] = useState(false);
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [suggestion, setSuggestion] = useState<string | null>(null);
@@ -312,19 +318,28 @@ function GratitudesSection({
   };
 
   const submitSlot = async (slotIndex: number) => {
+    // Each slot's input fires BOTH onSubmitEditing and onBlur; without
+    // this guard the second call reads the same draft and saves the
+    // gratitude twice.
+    if (submittingSlotsRef.current.has(slotIndex)) return;
     const text = (drafts[slotIndex] || "").trim();
     if (!text) return;
     if (items.length >= MAX) return;
-    const rollback = items;
-    const optimistic = [...items, { ordinal: items.length, text }];
-    setItems(optimistic);
-    setDrafts((prev) => {
-      const n = { ...prev };
-      delete n[slotIndex];
-      return n;
-    });
-    haptic();
-    await persist(optimistic, rollback);
+    submittingSlotsRef.current.add(slotIndex);
+    try {
+      const rollback = items;
+      const optimistic = [...items, { ordinal: items.length, text }];
+      setItems(optimistic);
+      setDrafts((prev) => {
+        const n = { ...prev };
+        delete n[slotIndex];
+        return n;
+      });
+      haptic();
+      await persist(optimistic, rollback);
+    } finally {
+      submittingSlotsRef.current.delete(slotIndex);
+    }
   };
 
   const removeAt = async (i: number) => {
@@ -446,11 +461,18 @@ function WentWellSection({ dailyPlanId, initial, onSaved }: WentWellSectionProps
   const [savingIdx, setSavingIdx] = useState<number | null>(null);
   const dirtyRef = React.useRef(false);
   const initialRef = React.useRef<string[]>(initial);
+  // Synchronous mirror of `values`: the debounce snapshot used to come
+  // from the render closure, so fast edits across rows could persist a
+  // stale neighbor value.
+  const valuesRef = React.useRef<string[]>(initial);
   const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     initialRef.current = initial;
-    if (!dirtyRef.current) setValues(initial);
+    if (!dirtyRef.current) {
+      valuesRef.current = initial;
+      setValues(initial);
+    }
   }, [initial]);
 
   useEffect(() => () => {
@@ -470,6 +492,7 @@ function WentWellSection({ dailyPlanId, initial, onSaved }: WentWellSectionProps
         dirtyRef.current = false;
         onSaved();
       } catch (e) {
+        valuesRef.current = initialRef.current;
         setValues(initialRef.current);
         dirtyRef.current = false;
         showError(formatSaveError("went well", e));
@@ -482,15 +505,13 @@ function WentWellSection({ dailyPlanId, initial, onSaved }: WentWellSectionProps
 
   const handleChange = (i: number, t: string) => {
     dirtyRef.current = true;
-    setValues((prev) => {
-      const next = [...prev];
-      next[i] = t;
-      return next;
-    });
+    const next = [...valuesRef.current];
+    next[i] = t;
+    valuesRef.current = next;
+    setValues(next);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    const snapshot = [...values];
-    snapshot[i] = t;
     debounceRef.current = setTimeout(() => {
+      const snapshot = [...valuesRef.current];
       if (snapshot[i] !== initialRef.current[i]) persist(i, snapshot);
     }, 800);
   };
@@ -500,8 +521,8 @@ function WentWellSection({ dailyPlanId, initial, onSaved }: WentWellSectionProps
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
-    if (values[i] === initialRef.current[i]) return;
-    persist(i, [...values]);
+    if (valuesRef.current[i] === initialRef.current[i]) return;
+    persist(i, [...valuesRef.current]);
   };
 
   const isAfterFive = new Date().getHours() >= 17;
