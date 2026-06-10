@@ -733,6 +733,12 @@ export const api = {
       body: JSON.stringify({ type: "turn-down", context }),
     }),
 
+  suggestTalkItOut: (transcript: string) =>
+    apiFetch<{ suggestion?: string }>("/coach/suggest", {
+      method: "POST",
+      body: JSON.stringify({ type: "talk-it-out", context: { transcript } }),
+    }),
+
   getDailyContent: () =>
     apiFetch<{
       greeting?: string;

@@ -71,6 +71,14 @@ export function SageOrb() {
     router.push("/sage");
   };
 
+  // Long-press: skip typing and talk it out instead.
+  const handleLongPress = () => {
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    }
+    router.push("/talk-it-out" as never);
+  };
+
   return (
     <Animated.View
       style={[
@@ -85,6 +93,9 @@ export function SageOrb() {
       <Animated.View style={[styles.glowRing, { opacity: glowAnim }]} />
       <Pressable
         onPress={handlePress}
+        onLongPress={handleLongPress}
+        delayLongPress={350}
+        accessibilityLabel="Open Sage. Long-press to talk it out."
         style={({ pressed }) => [
           styles.orb,
           pressed && { transform: [{ scale: 0.92 }] },

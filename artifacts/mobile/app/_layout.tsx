@@ -130,6 +130,14 @@ function RootLayoutContent() {
           }}
         />
         <Stack.Screen
+          name="talk-it-out"
+          options={{
+            headerShown: false,
+            presentation: "modal",
+            animation: "slide_from_bottom",
+          }}
+        />
+        <Stack.Screen
           name="journal-entry"
           options={{ headerShown: false, animation: "slide_from_right" }}
         />
