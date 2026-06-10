@@ -122,6 +122,14 @@ function RootLayoutContent() {
         />
         <Stack.Screen name="settings" options={{ title: "Settings" }} />
         <Stack.Screen
+          name="turn-down"
+          options={{
+            headerShown: false,
+            presentation: "modal",
+            animation: "slide_from_bottom",
+          }}
+        />
+        <Stack.Screen
           name="journal-entry"
           options={{ headerShown: false, animation: "slide_from_right" }}
         />

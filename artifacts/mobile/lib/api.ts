@@ -723,6 +723,16 @@ export const api = {
       },
     ),
 
+  suggestTurnDown: (context: {
+    date: string;
+    wentWells?: string[];
+    tomorrowPriority?: string;
+  }) =>
+    apiFetch<{ suggestion?: string }>("/coach/suggest", {
+      method: "POST",
+      body: JSON.stringify({ type: "turn-down", context }),
+    }),
+
   getDailyContent: () =>
     apiFetch<{
       greeting?: string;
