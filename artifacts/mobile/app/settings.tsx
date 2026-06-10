@@ -477,7 +477,16 @@ function BillingRow({
             color={Colors.textTertiary}
           />
         </Pressable>
-      ) : null}
+      ) : (
+        <View style={[styles.menuItem, styles.menuItemBorder]}>
+          <View style={styles.menuItemIconWrap}>
+            <Feather name="globe" size={18} color={Colors.textSecondary} />
+          </View>
+          <Text style={[styles.menuItemSub, { flex: 1 }]}>
+            Manage your Everstead Pro subscription at my.everstead.app
+          </Text>
+        </View>
+      )}
     </View>
   );
 }

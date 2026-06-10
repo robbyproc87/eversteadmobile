@@ -13,6 +13,7 @@ import {
 } from "react-native";
 
 import { AuthGuard } from "@/components/AuthGuard";
+import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { PreviewEmptyState } from "@/components/PreviewEmptyState";
 import { ArchitectureVisual } from "@/components/life-architecture/ArchitectureVisual";
 import { BreakInterstitial } from "@/components/life-architecture/BreakInterstitial";
@@ -43,30 +44,17 @@ function isPro(billing: BillingStatus | undefined): boolean {
   return plan === "pro" || plan === "premium" || plan === "trial";
 }
 
-function UpgradePrompt() {
-  const router = useRouter();
+// The previous local upgrade card pushed to /settings, which had no
+// upgrade affordance for free users - a dead end. The shared prompt
+// carries the Play-compliant manage-on-web copy and a refresh button
+// that unlocks the screen after a web upgrade.
+function LifeArchitectureUpgrade({ onUnlocked }: { onUnlocked: () => void }) {
   return (
     <View style={styles.upgradeWrap}>
-      <View style={styles.upgradeCard}>
-        <View style={styles.upgradeIcon}>
-          <Feather name="lock" size={28} color={Colors.gold} />
-        </View>
-        <Text style={styles.upgradeTitle}>Life Architecture is a Pro feature</Text>
-        <Text style={styles.upgradeBody}>
-          Build a foundation, raise pillars, draw blueprints, and write the
-          vision of your year. Available on Everstead Pro.
-        </Text>
-        <Pressable
-          onPress={() => router.push("/settings" as never)}
-          style={({ pressed }) => [
-            styles.upgradeBtn,
-            pressed && { opacity: 0.85 },
-          ]}
-        >
-          <Feather name="zap" size={14} color="#fff" />
-          <Text style={styles.upgradeBtnText}>Upgrade to Pro</Text>
-        </Pressable>
-      </View>
+      <UpgradePrompt
+        message="Build a foundation, raise pillars, draw blueprints, and write the vision of your year. Life Architecture is part of Everstead Pro."
+        onSuccess={onUnlocked}
+      />
     </View>
   );
 }
@@ -121,7 +109,7 @@ export default function LifeArchitectureScreen() {
           style={styles.container}
           contentContainerStyle={styles.scrollContent}
         >
-          <UpgradePrompt />
+          <LifeArchitectureUpgrade onUnlocked={() => billingQuery.refetch()} />
         </ScrollView>
       </AuthGuard>
     );
@@ -138,7 +126,7 @@ export default function LifeArchitectureScreen() {
           style={styles.container}
           contentContainerStyle={styles.scrollContent}
         >
-          <UpgradePrompt />
+          <LifeArchitectureUpgrade onUnlocked={() => billingQuery.refetch()} />
         </ScrollView>
       </AuthGuard>
     );

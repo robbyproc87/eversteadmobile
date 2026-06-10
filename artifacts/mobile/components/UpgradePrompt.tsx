@@ -1,19 +1,22 @@
 import { Feather } from "@expo/vector-icons";
 import { useQueryClient } from "@tanstack/react-query";
-import * as WebBrowser from "expo-web-browser";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
 import Colors from "@/constants/colors";
 import { api, type BillingStatus } from "@/lib/api";
-import { CHECKOUT_URL } from "@/lib/plan";
+
+// Play Store policy: no in-app purchase flow and no tappable checkout
+// link for digital goods. Plain-text pointer only; the refresh button
+// below picks up an upgrade made on the web.
+const MANAGE_COPY =
+  "Manage your Everstead Pro subscription at my.everstead.app";
 
 interface Props {
   variant?: "compact" | "full";
@@ -28,17 +31,12 @@ export function UpgradePrompt({
   message,
   onSuccess,
 }: Props) {
-  const [promo, setPromo] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(false);
   const queryClient = useQueryClient();
 
-  async function handleUpgrade() {
-    setLoading(true);
+  async function handleRefreshStatus() {
+    setChecking(true);
     try {
-      const url = promo.trim()
-        ? `${CHECKOUT_URL}?promo=${encodeURIComponent(promo.trim())}`
-        : CHECKOUT_URL;
-      await WebBrowser.openBrowserAsync(url);
       let nextBilling: BillingStatus | undefined;
       try {
         nextBilling = await queryClient.fetchQuery<BillingStatus>({
@@ -62,28 +60,19 @@ export function UpgradePrompt({
       if (isPro) {
         onSuccess?.();
       }
-    } catch {
-      // ignore — user can retry
     } finally {
-      setLoading(false);
+      setChecking(false);
     }
   }
 
   if (variant === "compact") {
     return (
-      <Pressable
-        onPress={handleUpgrade}
-        style={({ pressed }) => [
-          styles.compact,
-          pressed && { opacity: 0.85 },
-        ]}
-      >
+      <View style={styles.compact}>
         <Feather name="lock" size={14} color={Colors.dark} />
         <Text style={styles.compactText}>
-          {message ?? "Upgrade to unlock"}
+          {message ?? "Everstead Pro feature"}
         </Text>
-        <Feather name="external-link" size={14} color={Colors.dark} />
-      </Pressable>
+      </View>
     );
   }
 
@@ -92,7 +81,7 @@ export function UpgradePrompt({
       <View style={styles.iconWrap}>
         <Feather name="lock" size={22} color={Colors.gold} />
       </View>
-      <Text style={styles.title}>Upgrade to Everstead Pro</Text>
+      <Text style={styles.title}>Everstead Pro</Text>
       <Text style={styles.body}>
         {message ??
           (feature
@@ -100,31 +89,24 @@ export function UpgradePrompt({
             : "Unlock AI coaching, unlimited journaling, generated meditations, and more.")}
       </Text>
 
-      <TextInput
-        style={styles.promoInput}
-        value={promo}
-        onChangeText={setPromo}
-        placeholder="Promo code (optional)"
-        placeholderTextColor={Colors.textSecondary}
-        autoCapitalize="characters"
-        autoCorrect={false}
-      />
+      <Text style={styles.manageCopy}>{MANAGE_COPY}</Text>
 
       <Pressable
-        onPress={handleUpgrade}
-        disabled={loading}
+        onPress={handleRefreshStatus}
+        disabled={checking}
         style={({ pressed }) => [
           styles.cta,
           pressed && { opacity: 0.9 },
-          loading && { opacity: 0.6 },
+          checking && { opacity: 0.6 },
         ]}
+        accessibilityLabel="Refresh subscription status"
       >
-        {loading ? (
+        {checking ? (
           <ActivityIndicator color={Colors.dark} />
         ) : (
           <>
-            <Text style={styles.ctaText}>Upgrade</Text>
-            <Feather name="arrow-right" size={16} color={Colors.dark} />
+            <Feather name="refresh-cw" size={16} color={Colors.dark} />
+            <Text style={styles.ctaText}>Already upgraded? Refresh</Text>
           </>
         )}
       </Pressable>
@@ -175,16 +157,11 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     lineHeight: 20,
   },
-  promoInput: {
-    borderWidth: 1,
-    borderColor: "#e5e0d4",
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
+  manageCopy: {
+    fontSize: 13,
+    fontFamily: "Inter_500Medium",
     color: Colors.dark,
-    backgroundColor: Colors.background,
+    lineHeight: 19,
   },
   cta: {
     flexDirection: "row",
