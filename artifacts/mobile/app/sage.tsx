@@ -431,9 +431,12 @@ export default function SageScreen() {
           err instanceof Error &&
           (err.name === "AbortError" || /abort/i.test(err.message));
         if (!aborted) {
+          const isGreeting = opts?.isGreeting === true;
           if (isPaymentRequiredError(err)) {
             setChatLocked(true);
             setOptimisticMessages([]);
+            // Don't destroy what they typed: hand it back for after upgrade.
+            if (!isGreeting) setInput(message);
           } else {
             // eslint-disable-next-line no-console
             console.warn("Coach chat error", err);
@@ -444,6 +447,9 @@ export default function SageScreen() {
               { variant: "error" },
             );
             setOptimisticMessages([]);
+            // Restore the failed message to the composer so a retry is
+            // one tap, not a rewrite.
+            if (!isGreeting) setInput(message);
           }
         }
       } finally {
@@ -512,7 +518,7 @@ export default function SageScreen() {
       },
     ]);
     sendRaw(trimmed);
-  }, [input, isStreaming, isSending, sendRaw]);
+  }, [input, isStreaming, isSending, chatLocked, sendRaw]);
 
   const handleCoachSelect = useCallback(
     (coachId: string) => {
