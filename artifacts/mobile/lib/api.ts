@@ -4,6 +4,10 @@ import { supabase } from "./supabase";
 
 const API_BASE = "https://my.everstead.app/api";
 
+// Hard cap for non-streaming API requests. Streaming (coach chat) is
+// exempt: long generations are expected there and it has its own signal.
+const REQUEST_TIMEOUT_MS = 30_000;
+
 export interface DashboardStats {
   weeklyScore?: number;
   journalStreak?: number;
@@ -241,17 +245,36 @@ export async function apiFetch<T>(
   }
 
   const doFetch = async (authHeaders: Record<string, string>) => {
+    // Hung connections previously hung forever; abort after a hard
+    // timeout while still honoring any caller-provided signal.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const external = options?.signal;
+    if (external) {
+      if (external.aborted) controller.abort();
+      else external.addEventListener("abort", () => controller.abort());
+    }
     try {
       return await fetch(`${API_BASE}${path}`, {
         ...options,
+        signal: controller.signal,
         headers: {
           ...authHeaders,
           ...(options?.headers || {}),
         },
       });
     } catch (e) {
+      if (controller.signal.aborted && !external?.aborted) {
+        throw new ApiError(
+          "The request timed out. Check your connection and try again.",
+          0,
+          "Timeout",
+        );
+      }
       const msg = e instanceof Error ? e.message : "Network request failed";
       throw new ApiError(`Network error: ${msg}`, 0, "Network Error");
+    } finally {
+      clearTimeout(timer);
     }
   };
 
