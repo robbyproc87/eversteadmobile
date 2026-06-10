@@ -12,6 +12,20 @@ export interface DashboardStats {
   daysPlanned?: number;
 }
 
+export interface TrendDataPoint {
+  date: string;
+  journalEntries: number;
+  meditationMinutes: number;
+  pagesRead: number;
+  gratitudes: number;
+  plannedDay: number;
+}
+
+export interface WeeklyScorePoint {
+  weekStart: string;
+  score: number | null;
+}
+
 export interface ActivityItem {
   id: string;
   type: string;
@@ -270,6 +284,12 @@ export async function apiFetch<T>(
 
 export const api = {
   getDashboardStats: () => apiFetch<DashboardStats>("/dashboard/stats"),
+  getTrends: (rangeDays: number) =>
+    apiFetch<TrendDataPoint[]>(`/trends?range=${rangeDays}`),
+  getWeeklyScores: (rangeDays: number) =>
+    apiFetch<{ scores: WeeklyScorePoint[] }>(
+      `/trends/weekly-scores?range=${rangeDays}`,
+    ),
   getDashboardActivity: () => apiFetch<ActivityItem[]>("/dashboard/activity"),
   getTodayPlan: () => apiFetch<TodayPlan>("/plan/today"),
   getBillingStatus: () => apiFetch<BillingStatus>("/billing/status"),

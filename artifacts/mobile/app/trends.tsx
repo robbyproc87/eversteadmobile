@@ -15,21 +15,50 @@ import { AuthGuard } from "@/components/AuthGuard";
 import Colors from "@/constants/colors";
 import {
   type DashboardStats,
+  type TrendDataPoint,
+  type WeeklyScorePoint,
   api,
   isPreviewAuthError,
 } from "@/lib/api";
 
 interface TrendsState {
   stats: DashboardStats | null;
+  daily: TrendDataPoint[];
+  weeklyScores: WeeklyScorePoint[];
   isPreview: boolean;
-  isDemo: boolean;
 }
 
-const SAMPLE_WEEKLY_SCORES = [62, 71, 68, 78, 74, 82, 79, 85];
-const SAMPLE_MEDITATION_MIN = [10, 0, 15, 12, 0, 18, 20];
-const SAMPLE_READING_PAGES = [12, 18, 0, 22, 14, 28, 19];
+const WEEKLY_SCORE_WEEKS = 8;
 
-const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const SHORT_DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** Monday-start week, matching the web planner (planner-utils.getWeekStart). */
+function getMondayWeekStart(date: Date): Date {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function toDateParam(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Label for a week-start date, e.g. "5/12". */
+function weekLabel(dateStr: string): string {
+  const [, m, d] = dateStr.split("-");
+  return `${parseInt(m, 10)}/${parseInt(d, 10)}`;
+}
+
+function dayLabel(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  return SHORT_DAY[d.getUTCDay()];
+}
 
 export default function TrendsScreen() {
   return (
@@ -44,17 +73,21 @@ function TrendsContent() {
     queryKey: ["trends", "dashboard"],
     queryFn: async () => {
       try {
-        const stats = await api.getDashboardStats();
-        const hasAny =
-          (stats?.weeklyScore ?? 0) > 0 ||
-          (stats?.journalStreak ?? 0) > 0 ||
-          (stats?.plannerStreak ?? 0) > 0 ||
-          (stats?.pagesRead ?? 0) > 0 ||
-          (stats?.daysPlanned ?? 0) > 0;
-        return { stats: stats ?? null, isPreview: false, isDemo: !hasAny };
+        const [stats, daily, weekly] = await Promise.all([
+          api.getDashboardStats(),
+          api.getTrends(7),
+          // 8 week slots need up to ~60 days of history.
+          api.getWeeklyScores(WEEKLY_SCORE_WEEKS * 7 + 6),
+        ]);
+        return {
+          stats: stats ?? null,
+          daily: daily ?? [],
+          weeklyScores: weekly?.scores ?? [],
+          isPreview: false,
+        };
       } catch (e) {
         if (isPreviewAuthError(e)) {
-          return { stats: null, isPreview: true, isDemo: true };
+          return { stats: null, daily: [], weeklyScores: [], isPreview: true };
         }
         throw e;
       }
@@ -102,7 +135,37 @@ function TrendsContent() {
     );
   }
 
-  const { stats, isPreview, isDemo } = query.data;
+  const { stats, daily, weeklyScores, isPreview } = query.data;
+
+  // Map returned scores by week-start key. Tolerate legacy Sunday-keyed
+  // weeks created by older mobile builds (one day before the Monday key).
+  const scoreByWeek = new Map(weeklyScores.map((s) => [s.weekStart, s.score]));
+  const currentWeekStart = getMondayWeekStart(new Date());
+  const weekSlots: { label: string; score: number | null }[] = [];
+  for (let i = WEEKLY_SCORE_WEEKS - 1; i >= 0; i--) {
+    const monday = new Date(currentWeekStart);
+    monday.setDate(monday.getDate() - i * 7);
+    const sunday = new Date(monday);
+    sunday.setDate(sunday.getDate() - 1);
+    const key = toDateParam(monday);
+    const score = scoreByWeek.get(key) ?? scoreByWeek.get(toDateParam(sunday)) ?? null;
+    weekSlots.push({ label: weekLabel(key), score });
+  }
+
+  const meditationValues = daily.map((p) => p.meditationMinutes);
+  const pagesValues = daily.map((p) => p.pagesRead);
+  const dailyLabels = daily.map((p) => dayLabel(p.date));
+
+  const hasScores = weekSlots.some((w) => (w.score ?? 0) > 0);
+  const hasMeditation = meditationValues.some((v) => v > 0);
+  const hasPages = pagesValues.some((v) => v > 0);
+  const hasAnyData =
+    hasScores ||
+    hasMeditation ||
+    hasPages ||
+    (stats?.journalStreak ?? 0) > 0 ||
+    (stats?.plannerStreak ?? 0) > 0 ||
+    (stats?.daysPlanned ?? 0) > 0;
 
   return (
     <ScrollView
@@ -117,13 +180,19 @@ function TrendsContent() {
         />
       }
     >
-      {(isPreview || isDemo) && (
+      {isPreview && (
         <View style={styles.banner}>
           <Feather name="info" size={16} color={Colors.gold} />
           <Text style={styles.bannerText}>
-            {isPreview
-              ? "Preview Mode — sign in to see your real progress. Charts below show sample data."
-              : "Showing sample data. Your charts will populate as you use Everstead."}
+            Preview Mode — sign in to see your real progress.
+          </Text>
+        </View>
+      )}
+      {!isPreview && !hasAnyData && (
+        <View style={styles.banner}>
+          <Feather name="info" size={16} color={Colors.gold} />
+          <Text style={styles.bannerText}>
+            Your charts fill in as you plan, journal, read, and meditate.
           </Text>
         </View>
       )}
@@ -132,14 +201,8 @@ function TrendsContent() {
       <View style={styles.statRow}>
         <BigStat
           label="Weekly score"
-          value={
-            stats?.weeklyScore != null
-              ? `${stats.weeklyScore}`
-              : isDemo
-                ? "82"
-                : "—"
-          }
-          suffix={stats?.weeklyScore != null || isDemo ? "/100" : undefined}
+          value={stats?.weeklyScore != null ? `${stats.weeklyScore}` : "—"}
+          suffix={stats?.weeklyScore != null ? "/10" : undefined}
           color={Colors.gold}
           icon="award"
         />
@@ -148,14 +211,14 @@ function TrendsContent() {
       <View style={styles.statRow}>
         <SmallStat
           label="Journal streak"
-          value={stats?.journalStreak ?? (isDemo ? 7 : 0)}
+          value={stats?.journalStreak ?? 0}
           suffix="days"
           icon="book-open"
           color="#5b8def"
         />
         <SmallStat
           label="Planner streak"
-          value={stats?.plannerStreak ?? (isDemo ? 5 : 0)}
+          value={stats?.plannerStreak ?? 0}
           suffix="days"
           icon="check-square"
           color="#4a9c6d"
@@ -165,14 +228,14 @@ function TrendsContent() {
       <View style={styles.statRow}>
         <SmallStat
           label="Pages read"
-          value={stats?.pagesRead ?? (isDemo ? 113 : 0)}
+          value={stats?.pagesRead ?? 0}
           suffix="this wk"
           icon="book"
           color="#d4534a"
         />
         <SmallStat
           label="Days planned"
-          value={stats?.daysPlanned ?? (isDemo ? 6 : 0)}
+          value={stats?.daysPlanned ?? 0}
           suffix="this wk"
           icon="calendar"
           color="#8B5CF6"
@@ -180,22 +243,26 @@ function TrendsContent() {
       </View>
 
       <SectionTitle title="Weekly score" subtitle="Last 8 weeks" />
-      <ChartCard demo={isDemo}>
+      <ChartCard
+        emptyHint={hasScores ? undefined : "Score your week in the planner's Weekly Review to start this chart."}
+      >
         <BarChart
-          values={SAMPLE_WEEKLY_SCORES}
-          labels={["−7w", "−6w", "−5w", "−4w", "−3w", "−2w", "−1w", "Now"]}
-          maxValue={100}
+          values={weekSlots.map((w) => w.score ?? 0)}
+          labels={weekSlots.map((w) => w.label)}
+          maxValue={10}
           color={Colors.gold}
           height={140}
         />
       </ChartCard>
 
       <SectionTitle title="Meditation minutes" subtitle="Last 7 days" />
-      <ChartCard demo={isDemo}>
+      <ChartCard
+        emptyHint={hasMeditation ? undefined : "Finish a meditation session and it shows up here."}
+      >
         <BarChart
-          values={SAMPLE_MEDITATION_MIN}
-          labels={DAY_LABELS}
-          maxValue={Math.max(20, ...SAMPLE_MEDITATION_MIN)}
+          values={meditationValues}
+          labels={dailyLabels}
+          maxValue={Math.max(20, ...meditationValues)}
           color="#8B5CF6"
           height={120}
           unit="min"
@@ -203,11 +270,13 @@ function TrendsContent() {
       </ChartCard>
 
       <SectionTitle title="Pages read" subtitle="Last 7 days" />
-      <ChartCard demo={isDemo}>
+      <ChartCard
+        emptyHint={hasPages ? undefined : "Log reading in the Growth Library to track your pages."}
+      >
         <BarChart
-          values={SAMPLE_READING_PAGES}
-          labels={DAY_LABELS}
-          maxValue={Math.max(30, ...SAMPLE_READING_PAGES)}
+          values={pagesValues}
+          labels={dailyLabels}
+          maxValue={Math.max(30, ...pagesValues)}
           color="#d4534a"
           height={120}
           unit="pg"
@@ -236,15 +305,15 @@ function SectionTitle({
 
 function ChartCard({
   children,
-  demo,
+  emptyHint,
 }: {
   children: React.ReactNode;
-  demo?: boolean;
+  emptyHint?: string;
 }) {
   return (
     <View style={styles.chartCard}>
       {children}
-      {demo ? <Text style={styles.demoLabel}>Demo data</Text> : null}
+      {emptyHint ? <Text style={styles.emptyHint}>{emptyHint}</Text> : null}
     </View>
   );
 }
@@ -554,11 +623,12 @@ const styles = StyleSheet.create({
     borderColor: Colors.cardBorder,
     padding: 12,
   },
-  demoLabel: {
-    marginTop: 4,
-    fontSize: 10,
-    fontFamily: "Inter_500Medium",
+  emptyHint: {
+    marginTop: 8,
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
     color: Colors.textTertiary,
-    textAlign: "right",
+    textAlign: "center",
+    lineHeight: 16,
   },
 });
