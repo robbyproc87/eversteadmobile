@@ -99,6 +99,12 @@ export default function MeditationScreen() {
   const [ambientId, setAmbientId] = useState<string>("none");
   const [bgVolume, setBgVolume] = useState(70);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Elapsed time is derived from wall-clock timestamps, not interval
+  // ticks: JS intervals suspend while the app is backgrounded, which
+  // made sessions undercount. timerStartRef is the start of the current
+  // running stretch; pausedElapsedRef accumulates completed stretches.
+  const timerStartRef = useRef<number | null>(null);
+  const pausedElapsedRef = useRef(0);
   const ambientSoundRef = useRef<Audio.Sound | null>(null);
   const ambientTokenRef = useRef(0);
 
@@ -279,6 +285,8 @@ export default function MeditationScreen() {
   const completeSession = useCallback(
     (durationS: number) => {
       clearTimerInterval();
+      timerStartRef.current = null;
+      pausedElapsedRef.current = 0;
       setIsTimerActive(false);
       stopAmbient();
       deactivateKeepAwake().catch(() => {});
@@ -298,44 +306,38 @@ export default function MeditationScreen() {
     [clearTimerInterval, createSession, showToast, stopAmbient],
   );
 
+  // The interval only repaints; elapsed truth comes from timestamps, so
+  // a backgrounded app catches up to the right value on the next tick.
+  // Session completion happens here, in the tick - never inside a state
+  // updater, where side effects can double-fire.
+  const startTicking = useCallback(() => {
+    clearTimerInterval();
+    intervalRef.current = setInterval(() => {
+      const start = timerStartRef.current;
+      if (start == null) return;
+      const next = Math.min(
+        selectedDuration,
+        pausedElapsedRef.current + Math.floor((Date.now() - start) / 1000),
+      );
+      setElapsed(next);
+      if (next >= selectedDuration) {
+        completeSession(selectedDuration);
+      }
+    }, 500);
+  }, [clearTimerInterval, completeSession, selectedDuration]);
+
   const beginTimer = useCallback(() => {
     if (Platform.OS !== "web") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    clearTimerInterval();
+    pausedElapsedRef.current = 0;
+    timerStartRef.current = Date.now();
     setElapsed(0);
     setIsTimerActive(true);
     activateKeepAwakeAsync().catch(() => {});
     startAmbient();
-
-    intervalRef.current = setInterval(() => {
-      setElapsed((prev) => {
-        const next = prev + 1;
-        if (next >= selectedDuration) {
-          clearTimerInterval();
-          setIsTimerActive(false);
-          stopAmbient();
-          deactivateKeepAwake().catch(() => {});
-          setPendingDurationS(selectedDuration);
-          const tb = checkinRef.current.tensionBefore;
-          const sb = checkinRef.current.stressBefore;
-          createSession.mutate({
-            durationS: selectedDuration,
-            ...(tb != null ? { tensionBefore: tb } : {}),
-            ...(sb != null ? { stressBefore: sb } : {}),
-          });
-          return selectedDuration;
-        }
-        return next;
-      });
-    }, 1000);
-  }, [
-    clearTimerInterval,
-    createSession,
-    selectedDuration,
-    startAmbient,
-    stopAmbient,
-  ]);
+    startTicking();
+  }, [startAmbient, startTicking]);
 
   const handleStart = useCallback(() => {
     if (Platform.OS !== "web") {
@@ -349,39 +351,28 @@ export default function MeditationScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     clearTimerInterval();
+    const start = timerStartRef.current;
+    if (start != null) {
+      pausedElapsedRef.current = Math.min(
+        selectedDuration,
+        pausedElapsedRef.current + Math.floor((Date.now() - start) / 1000),
+      );
+      timerStartRef.current = null;
+      setElapsed(pausedElapsedRef.current);
+    }
     setIsTimerActive(false);
     ambientSoundRef.current?.pauseAsync().catch(() => {});
-  }, [clearTimerInterval]);
+  }, [clearTimerInterval, selectedDuration]);
 
   const handleResume = useCallback(() => {
     if (Platform.OS !== "web") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-    clearTimerInterval();
+    timerStartRef.current = Date.now();
     setIsTimerActive(true);
     ambientSoundRef.current?.playAsync().catch(() => {});
-    intervalRef.current = setInterval(() => {
-      setElapsed((prev) => {
-        const next = prev + 1;
-        if (next >= selectedDuration) {
-          clearTimerInterval();
-          setIsTimerActive(false);
-          stopAmbient();
-          deactivateKeepAwake().catch(() => {});
-          setPendingDurationS(selectedDuration);
-          const tb = checkinRef.current.tensionBefore;
-          const sb = checkinRef.current.stressBefore;
-          createSession.mutate({
-            durationS: selectedDuration,
-            ...(tb != null ? { tensionBefore: tb } : {}),
-            ...(sb != null ? { stressBefore: sb } : {}),
-          });
-          return selectedDuration;
-        }
-        return next;
-      });
-    }, 1000);
-  }, [clearTimerInterval, createSession, selectedDuration, stopAmbient]);
+    startTicking();
+  }, [startTicking]);
 
   const handleStop = useCallback(() => {
     if (Platform.OS !== "web") {
@@ -411,7 +402,7 @@ export default function MeditationScreen() {
         }
       }
     },
-    [bgVolume, isTimerActive, loadAmbient, stopAmbient],
+    [bgVolume, isTimerActive, loadAmbient, stopAmbient, plan.isPro],
   );
 
   const handleRateRecent = useCallback(
