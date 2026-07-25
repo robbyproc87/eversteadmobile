@@ -1,5 +1,4 @@
 import { Feather } from "@expo/vector-icons";
-import Constants from "expo-constants";
 import { Redirect } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import React, { useState } from "react";
@@ -16,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "@/contexts/AuthContext";
 import Colors from "@/constants/colors";
+import { buildStamp } from "@/lib/build-stamp";
 
 export default function LoginScreen() {
   const { session, loading, signInWithGoogle, devBypass } = useAuth();
@@ -135,9 +135,7 @@ export default function LoginScreen() {
             <Text style={styles.privacyLink}>Privacy Policy</Text>
           </Pressable>
         </View>
-        <Text style={styles.versionText}>
-          {`v${Constants.expoConfig?.version ?? "1.0"}`}
-        </Text>
+        <Text style={styles.versionText}>{buildStamp()}</Text>
       </View>
     </View>
   );
