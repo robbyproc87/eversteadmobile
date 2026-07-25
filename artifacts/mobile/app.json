@@ -8,6 +8,13 @@
     "scheme": "everstead",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "updates": {
+      "url": "https://u.expo.dev/ae10357a-06b0-48f0-9459-bce44d8831cd",
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
     "splash": {
       "image": "./assets/images/splash.png",
       "resizeMode": "contain",

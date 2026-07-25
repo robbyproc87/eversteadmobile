@@ -66,6 +66,7 @@
     "expo-print": "~15.0.8",
     "expo-secure-store": "^15.0.8",
     "expo-sharing": "~14.0.8",
+    "expo-updates": "~29.0.17",
     "perfect-freehand": "^1.2.3",
     "react-native-health-connect": "^3.4.0",
     "react-native-view-shot": "^4.0.3"
