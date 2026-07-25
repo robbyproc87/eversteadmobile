@@ -18,6 +18,7 @@ import {
   hasHealthPermissions,
   readTodayHealth,
   requestHealthPermissions,
+  type HealthSnapshot,
 } from "@/lib/health";
 
 function todayParam(): string {
@@ -30,7 +31,7 @@ function todayParam(): string {
 type HealthState =
   | { status: "unsupported" }
   | { status: "needs-permission" }
-  | { status: "connected"; steps: number | null; sleepH: number | null };
+  | ({ status: "connected" } & HealthSnapshot);
 
 /**
  * The Healthset card. On Android with Health Connect it shows today's
@@ -44,24 +45,27 @@ export function HealthsetCard() {
   const lastSyncedRef = useRef<string | null>(null);
 
   // Best-effort upload; the card renders from local data either way.
-  const syncToServer = useCallback(
-    (steps: number | null, sleepH: number | null) => {
-      if (steps == null && sleepH == null) return;
-      const payload = JSON.stringify({ steps, sleepH });
-      if (lastSyncedRef.current === payload) return;
-      lastSyncedRef.current = payload;
-      api
-        .upsertDailyMetric({
-          date: todayParam(),
-          ...(steps != null ? { steps } : {}),
-          ...(sleepH != null ? { sleepH } : {}),
-        })
-        .catch(() => {
-          lastSyncedRef.current = null;
-        });
-    },
-    [],
-  );
+  // Only fields we actually read are sent, so a metric the user hasn't
+  // granted never overwrites a value entered elsewhere.
+  const syncToServer = useCallback((snapshot: HealthSnapshot) => {
+    const { steps, sleepH, activeMin, activeKcal } = snapshot;
+    if (steps == null && sleepH == null && activeMin == null && activeKcal == null)
+      return;
+    const payload = JSON.stringify(snapshot);
+    if (lastSyncedRef.current === payload) return;
+    lastSyncedRef.current = payload;
+    api
+      .upsertDailyMetric({
+        date: todayParam(),
+        ...(steps != null ? { steps } : {}),
+        ...(sleepH != null ? { sleepH } : {}),
+        ...(activeMin != null ? { activeMin } : {}),
+        ...(activeKcal != null ? { activeKcal } : {}),
+      })
+      .catch(() => {
+        lastSyncedRef.current = null;
+      });
+  }, []);
 
   const healthQuery = useQuery<HealthState>({
     queryKey: ["healthset", todayParam()],
@@ -69,7 +73,7 @@ export function HealthsetCard() {
       if (!(await isHealthConnectAvailable())) return { status: "unsupported" };
       if (!(await hasHealthPermissions())) return { status: "needs-permission" };
       const snapshot = await readTodayHealth();
-      syncToServer(snapshot.steps, snapshot.sleepH);
+      syncToServer(snapshot);
       return { status: "connected", ...snapshot };
     },
     staleTime: 5 * 60_000,
@@ -170,21 +174,32 @@ export function HealthsetCard() {
           </Pressable>
         }
       />
+      {/* The three the program weighs most heavily, in the same order
+          as the web planner card. Steps still sync and still reach the
+          coaches; they just don't get one of the three slots. */}
       <View style={styles.metricsRow}>
+        <View style={styles.metric}>
+          <Feather name="activity" size={16} color={Colors.success} />
+          <Text style={styles.metricValue}>
+            {state.activeMin != null ? `${state.activeMin}m` : "—"}
+          </Text>
+          <Text style={styles.metricLabel}>active</Text>
+        </View>
+        <View style={styles.metricDivider} />
+        <View style={styles.metric}>
+          <Feather name="zap" size={16} color={Colors.goldDark} />
+          <Text style={styles.metricValue}>
+            {state.activeKcal != null ? state.activeKcal.toLocaleString() : "—"}
+          </Text>
+          <Text style={styles.metricLabel}>cal</Text>
+        </View>
+        <View style={styles.metricDivider} />
         <View style={styles.metric}>
           <Feather name="moon" size={16} color="#8B5CF6" />
           <Text style={styles.metricValue}>
             {state.sleepH != null ? `${state.sleepH}h` : "—"}
           </Text>
           <Text style={styles.metricLabel}>sleep</Text>
-        </View>
-        <View style={styles.metricDivider} />
-        <View style={styles.metric}>
-          <Feather name="trending-up" size={16} color={Colors.success} />
-          <Text style={styles.metricValue}>
-            {state.steps != null ? state.steps.toLocaleString() : "—"}
-          </Text>
-          <Text style={styles.metricLabel}>steps</Text>
         </View>
       </View>
     </View>

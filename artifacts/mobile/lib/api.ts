@@ -35,6 +35,8 @@ export interface DailyMetric {
   date: string;
   sleepH: number | null;
   steps: number | null;
+  activeMin: number | null;
+  activeKcal: number | null;
   weightKg: number | null;
   hrv: number | null;
   moodScore: number | null;
@@ -345,6 +347,8 @@ export const api = {
     date: string;
     sleepH?: number | null;
     steps?: number | null;
+    activeMin?: number | null;
+    activeKcal?: number | null;
     energy?: number | null;
     stress?: number | null;
   }) =>

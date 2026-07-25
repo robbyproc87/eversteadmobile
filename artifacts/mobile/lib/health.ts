@@ -6,6 +6,10 @@ import { Platform } from "react-native";
 export interface HealthSnapshot {
   steps: number | null;
   sleepH: number | null;
+  /** Minutes of logged exercise today. */
+  activeMin: number | null;
+  /** Calories burned through activity today. */
+  activeKcal: number | null;
 }
 
 type HealthConnectModule = typeof import("react-native-health-connect");
@@ -38,8 +42,19 @@ export async function isHealthConnectAvailable(): Promise<boolean> {
 const REQUIRED_PERMISSIONS = [
   { accessType: "read", recordType: "Steps" },
   { accessType: "read", recordType: "SleepSession" },
+  { accessType: "read", recordType: "ActiveCaloriesBurned" },
+  { accessType: "read", recordType: "ExerciseSession" },
 ] as const;
 
+/**
+ * True once the user has granted at least one of the reads we ask for.
+ *
+ * Health Connect lets a user approve permissions individually, so
+ * requiring all four would leave someone who granted only steps stuck
+ * on the connect prompt forever while their data was already readable.
+ * Each read is guarded separately, so a partial grant degrades to
+ * fewer metrics rather than none.
+ */
 export async function hasHealthPermissions(): Promise<boolean> {
   const hc = getModule();
   if (!hc) return false;
@@ -47,7 +62,7 @@ export async function hasHealthPermissions(): Promise<boolean> {
     const ok = await hc.initialize();
     if (!ok) return false;
     const granted = await hc.getGrantedPermissions();
-    return REQUIRED_PERMISSIONS.every((req) =>
+    return REQUIRED_PERMISSIONS.some((req) =>
       granted.some(
         (g) => g.recordType === req.recordType && g.accessType === "read",
       ),
@@ -70,10 +85,15 @@ export async function requestHealthPermissions(): Promise<boolean> {
   }
 }
 
-/** Steps since local midnight, and last night's sleep in hours. */
+/**
+ * Today's movement since local midnight, and last night's sleep.
+ * Any single read failing (not granted, no provider data) yields null
+ * for that metric rather than sinking the whole snapshot.
+ */
 export async function readTodayHealth(): Promise<HealthSnapshot> {
   const hc = getModule();
-  if (!hc) return { steps: null, sleepH: null };
+  if (!hc)
+    return { steps: null, sleepH: null, activeMin: null, activeKcal: null };
 
   const now = new Date();
   const midnight = new Date(now);
@@ -85,6 +105,8 @@ export async function readTodayHealth(): Promise<HealthSnapshot> {
 
   let steps: number | null = null;
   let sleepH: number | null = null;
+  let activeMin: number | null = null;
+  let activeKcal: number | null = null;
 
   try {
     await hc.initialize();
@@ -130,9 +152,52 @@ export async function readTodayHealth(): Promise<HealthSnapshot> {
     } catch {
       sleepH = null;
     }
+
+    const todayRange = {
+      operator: "between" as const,
+      startTime: midnight.toISOString(),
+      endTime: now.toISOString(),
+    };
+
+    try {
+      const res = await hc.readRecords("ActiveCaloriesBurned", {
+        timeRangeFilter: todayRange,
+      });
+      const records = res?.records ?? [];
+      if (records.length > 0) {
+        const kcal = records.reduce(
+          (sum, r) => sum + (r.energy?.inKilocalories ?? 0),
+          0,
+        );
+        activeKcal = Math.round(kcal);
+      } else {
+        activeKcal = 0;
+      }
+    } catch {
+      activeKcal = null;
+    }
+
+    try {
+      const res = await hc.readRecords("ExerciseSession", {
+        timeRangeFilter: todayRange,
+      });
+      const records = res?.records ?? [];
+      if (records.length > 0) {
+        const totalMs = records.reduce((sum, r) => {
+          const start = new Date(r.startTime).getTime();
+          const end = new Date(r.endTime).getTime();
+          return end > start ? sum + (end - start) : sum;
+        }, 0);
+        activeMin = Math.round(totalMs / 60_000);
+      } else {
+        activeMin = 0;
+      }
+    } catch {
+      activeMin = null;
+    }
   } catch {
-    return { steps: null, sleepH: null };
+    return { steps: null, sleepH: null, activeMin: null, activeKcal: null };
   }
 
-  return { steps, sleepH };
+  return { steps, sleepH, activeMin, activeKcal };
 }
