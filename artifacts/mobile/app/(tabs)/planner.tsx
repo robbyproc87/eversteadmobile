@@ -582,9 +582,20 @@ function TodoSection({ dailyPlanId, initial, blueprintTodos, onChange }: TodoSec
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickedIds, setPickedIds] = useState<Set<string>>(new Set());
   const inputRef = React.useRef<TextInput>(null);
+  // Toggles that have been applied locally but whose PUT hasn't landed
+  // yet. A refetch that started before the PUT still carries the old
+  // completed value, so its rows must not be allowed to overwrite them.
+  const pendingRef = React.useRef<Map<string, boolean>>(new Map());
 
   useEffect(() => {
-    setTodos(initial);
+    setTodos(
+      pendingRef.current.size === 0
+        ? initial
+        : initial.map((t) => {
+            const pending = pendingRef.current.get(t.id);
+            return pending === undefined ? t : { ...t, completed: pending };
+          }),
+    );
   }, [initial]);
 
   const hasBlueprintTodos = blueprintTodos.length > 0;
@@ -661,14 +672,17 @@ function TodoSection({ dailyPlanId, initial, blueprintTodos, onChange }: TodoSec
 
   const toggle = async (todo: DailyPlanTodo) => {
     const target = !todo.completed;
+    pendingRef.current.set(todo.id, target);
     setTodos((prev) =>
       prev.map((t) => (t.id === todo.id ? { ...t, completed: target } : t)),
     );
     haptic();
     try {
       await api.updateTodo(todo.id, { completed: target });
+      pendingRef.current.delete(todo.id);
       onChange();
     } catch (e) {
+      pendingRef.current.delete(todo.id);
       setTodos((prev) =>
         prev.map((t) => (t.id === todo.id ? { ...t, completed: !target } : t)),
       );
