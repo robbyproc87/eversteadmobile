@@ -1828,6 +1828,21 @@ export default function PlannerScreen() {
           <>
             <NudgeCard nudge={nudgeQuery.data} />
 
+            {/* To-dos and Healthset lead the day on a phone, where the
+                agenda would otherwise eat the first screen and push the
+                two things the user came to act on below the fold. The
+                agenda then sits between them and the reflective sections.
+                Web keeps its own order - its columns already surface both
+                at the top-left when read left to right. */}
+            <TodoSection
+              dailyPlanId={dailyPlan?.id}
+              initial={todos}
+              blueprintTodos={blueprintTodos}
+              onChange={invalidatePlan}
+            />
+
+            <HealthsetCard />
+
             <ScheduleSection
               events={eventsQuery.data || []}
               viewingToday={viewingToday}
@@ -1854,15 +1869,6 @@ export default function PlannerScreen() {
               initial={wentWells}
               onSaved={invalidatePlan}
             />
-
-            <TodoSection
-              dailyPlanId={dailyPlan?.id}
-              initial={todos}
-              blueprintTodos={blueprintTodos}
-              onChange={invalidatePlan}
-            />
-
-            <HealthsetCard />
           </>
         )}
       </ScrollView>
