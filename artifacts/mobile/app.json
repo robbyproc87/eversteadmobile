@@ -2,7 +2,7 @@
   "expo": {
     "name": "Everstead",
     "slug": "everstead",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "everstead",
@@ -45,6 +45,7 @@
       "expo-font",
       "expo-web-browser",
       "react-native-health-connect",
+      "./plugins/withHealthConnectDelegate",
       [
         "expo-build-properties",
         {
