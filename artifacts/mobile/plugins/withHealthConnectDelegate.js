@@ -1,4 +1,8 @@
-const { withMainActivity } = require("@expo/config-plugins");
+// Imported via `expo/config-plugins`, not `@expo/config-plugins`. The
+// latter is a transitive dependency and pnpm's strict node_modules layout
+// leaves it unresolvable from this directory, which would fail prebuild.
+// `expo` is a direct dependency and re-exports the same API.
+const { withMainActivity } = require("expo/config-plugins");
 
 /**
  * Registers the Health Connect permission delegate on MainActivity.
