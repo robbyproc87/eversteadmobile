@@ -16,6 +16,7 @@ import { api } from "@/lib/api";
 import {
   isHealthConnectAvailable,
   hasHealthPermissions,
+  missingHealthPermissions,
   readTodayHealth,
   requestHealthPermissions,
   type HealthSnapshot,
@@ -31,7 +32,7 @@ function todayParam(): string {
 type HealthState =
   | { status: "unsupported" }
   | { status: "needs-permission" }
-  | ({ status: "connected" } & HealthSnapshot);
+  | ({ status: "connected"; missing: string[] } & HealthSnapshot);
 
 /**
  * The Healthset card. On Android with Health Connect it shows today's
@@ -48,7 +49,7 @@ export function HealthsetCard() {
   // Only fields we actually read are sent, so a metric the user hasn't
   // granted never overwrites a value entered elsewhere.
   const syncToServer = useCallback((snapshot: HealthSnapshot) => {
-    const { steps, sleepH, activeMin, activeKcal } = snapshot;
+    const { steps, sleepH, activeMin, activeKcal, activeKcalSource } = snapshot;
     if (steps == null && sleepH == null && activeMin == null && activeKcal == null)
       return;
     const payload = JSON.stringify(snapshot);
@@ -60,7 +61,9 @@ export function HealthsetCard() {
         ...(steps != null ? { steps } : {}),
         ...(sleepH != null ? { sleepH } : {}),
         ...(activeMin != null ? { activeMin } : {}),
-        ...(activeKcal != null ? { activeKcal } : {}),
+        // The figure never travels without how it was arrived at, so the
+        // coaches can't mistake an estimate for a measurement.
+        ...(activeKcal != null ? { activeKcal, activeKcalSource } : {}),
       })
       .catch(() => {
         lastSyncedRef.current = null;
@@ -74,7 +77,8 @@ export function HealthsetCard() {
       if (!(await hasHealthPermissions())) return { status: "needs-permission" };
       const snapshot = await readTodayHealth();
       syncToServer(snapshot);
-      return { status: "connected", ...snapshot };
+      const missing = await missingHealthPermissions();
+      return { status: "connected", missing, ...snapshot };
     },
     staleTime: 5 * 60_000,
     retry: false,
@@ -191,7 +195,16 @@ export function HealthsetCard() {
           <Text style={styles.metricValue}>
             {state.activeKcal != null ? state.activeKcal.toLocaleString() : "—"}
           </Text>
-          <Text style={styles.metricLabel}>cal</Text>
+          {/* Say which figure this is. "total" includes basal burn and is a
+              materially different number from active effort; "derived" is
+              arithmetic, not a reading. Silence would imply measured. */}
+          <Text style={styles.metricLabel}>
+            {state.activeKcalSource === "total"
+              ? "total cal"
+              : state.activeKcalSource === "derived"
+                ? "cal (est.)"
+                : "cal"}
+          </Text>
         </View>
         <View style={styles.metricDivider} />
         <View style={styles.metric}>
@@ -202,6 +215,26 @@ export function HealthsetCard() {
           <Text style={styles.metricLabel}>sleep</Text>
         </View>
       </View>
+
+      {/* An upgrade can add metrics the user was never asked about. Without
+          this the card looks connected while quietly missing them. */}
+      {state.missing.length > 0 ? (
+        <Pressable
+          onPress={handleConnect}
+          disabled={requesting}
+          style={({ pressed }) => [
+            styles.grantMoreBtn,
+            pressed && { opacity: 0.7 },
+          ]}
+          accessibilityLabel="Allow the remaining Health Connect metrics"
+        >
+          <Text style={styles.grantMoreText}>
+            {requesting
+              ? "Opening Health Connect…"
+              : `Allow ${state.missing.length} more metric${state.missing.length === 1 ? "" : "s"}`}
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -313,6 +346,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: "Inter_400Regular",
     color: Colors.textSecondary,
+  },
+  grantMoreBtn: {
+    marginTop: 10,
+    paddingVertical: 8,
+    alignItems: "center",
+    borderRadius: 8,
+    backgroundColor: Colors.goldLight,
+  },
+  grantMoreText: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    color: Colors.goldDark,
   },
   metricDivider: {
     width: 1,

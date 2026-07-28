@@ -37,6 +37,7 @@ export interface DailyMetric {
   steps: number | null;
   activeMin: number | null;
   activeKcal: number | null;
+  activeKcalSource: "measured" | "derived" | "total" | null;
   weightKg: number | null;
   hrv: number | null;
   moodScore: number | null;
@@ -349,6 +350,7 @@ export const api = {
     steps?: number | null;
     activeMin?: number | null;
     activeKcal?: number | null;
+    activeKcalSource?: "measured" | "derived" | "total" | null;
     energy?: number | null;
     stress?: number | null;
   }) =>
