@@ -120,14 +120,16 @@ export async function readTodayHealth(): Promise<HealthSnapshot> {
         },
       });
       const records = res?.records ?? [];
-      if (records.length > 0) {
-        steps = records.reduce(
-          (sum, r) => sum + (typeof r.count === "number" ? r.count : 0),
-          0,
-        );
-      } else {
-        steps = 0;
-      }
+      // No records means the provider wrote nothing, which is not the
+      // same claim as "you took zero steps". Only report a number when
+      // there is data behind it; the card shows an em dash otherwise.
+      steps =
+        records.length > 0
+          ? records.reduce(
+              (sum, r) => sum + (typeof r.count === "number" ? r.count : 0),
+              0,
+            )
+          : null;
     } catch {
       steps = null;
     }
@@ -164,15 +166,12 @@ export async function readTodayHealth(): Promise<HealthSnapshot> {
         timeRangeFilter: todayRange,
       });
       const records = res?.records ?? [];
-      if (records.length > 0) {
-        const kcal = records.reduce(
-          (sum, r) => sum + (r.energy?.inKilocalories ?? 0),
-          0,
-        );
-        activeKcal = Math.round(kcal);
-      } else {
-        activeKcal = 0;
-      }
+      activeKcal =
+        records.length > 0
+          ? Math.round(
+              records.reduce((sum, r) => sum + (r.energy?.inKilocalories ?? 0), 0),
+            )
+          : null;
     } catch {
       activeKcal = null;
     }
@@ -182,16 +181,16 @@ export async function readTodayHealth(): Promise<HealthSnapshot> {
         timeRangeFilter: todayRange,
       });
       const records = res?.records ?? [];
-      if (records.length > 0) {
-        const totalMs = records.reduce((sum, r) => {
-          const start = new Date(r.startTime).getTime();
-          const end = new Date(r.endTime).getTime();
-          return end > start ? sum + (end - start) : sum;
-        }, 0);
-        activeMin = Math.round(totalMs / 60_000);
-      } else {
-        activeMin = 0;
-      }
+      activeMin =
+        records.length > 0
+          ? Math.round(
+              records.reduce((sum, r) => {
+                const start = new Date(r.startTime).getTime();
+                const end = new Date(r.endTime).getTime();
+                return end > start ? sum + (end - start) : sum;
+              }, 0) / 60_000,
+            )
+          : null;
     } catch {
       activeMin = null;
     }
