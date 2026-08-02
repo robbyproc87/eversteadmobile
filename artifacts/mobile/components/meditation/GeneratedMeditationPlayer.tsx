@@ -16,6 +16,7 @@ import {
 } from "react-native";
 
 import Colors from "@/constants/colors";
+import { VolumeControl } from "@/components/meditation/VolumeControl";
 import {
   AMBIENT_SOUNDS,
   getAmbientSoundUrl,
@@ -102,6 +103,22 @@ export default function GeneratedMeditationPlayer({
   // two-channel mixer.
   const [ambientId, setAmbientId] = useState("none");
   const bedRef = useRef<Audio.Sound | null>(null);
+  // Voice and bed are balanced against each other, not set once. Rain at a
+  // fixed level either buries a soft passage or vanishes under a loud one,
+  // and the user is the only one who knows which. Web exposes both; mobile
+  // shipped with neither.
+  const [voiceVolume, setVoiceVolume] = useState(100);
+  const [bedVolume, setBedVolume] = useState(Math.round(BED_VOLUME * 100));
+
+  // Apply changes to whichever track is already loaded. Failures are
+  // ignored: an unloaded sound simply picks the value up on creation.
+  useEffect(() => {
+    soundRef.current?.setVolumeAsync(voiceVolume / 100).catch(() => {});
+  }, [voiceVolume]);
+
+  useEffect(() => {
+    bedRef.current?.setVolumeAsync(bedVolume / 100).catch(() => {});
+  }, [bedVolume]);
   const bedTokenRef = useRef(0);
 
   const stopBed = useCallback(async () => {
@@ -139,7 +156,7 @@ export default function GeneratedMeditationPlayer({
       try {
         const { sound: bed } = await Audio.Sound.createAsync(
           { uri: url },
-          { isLooping: true, volume: BED_VOLUME, shouldPlay: playNow },
+          { isLooping: true, volume: bedVolume / 100, shouldPlay: playNow },
         );
         if (token !== bedTokenRef.current) {
           try {
@@ -152,7 +169,9 @@ export default function GeneratedMeditationPlayer({
         // ambient bed is best-effort
       }
     },
-    [],
+    // bedVolume is read when creating the bed; without it here a switch of
+    // ambient sound would resurrect whatever level was set on first mount.
+    [bedVolume],
   );
 
   const teardown = useCallback(async () => {
@@ -202,7 +221,11 @@ export default function GeneratedMeditationPlayer({
         });
         const { sound } = await Audio.Sound.createAsync(
           { uri: detail.audioUrl as string },
-          { shouldPlay: true, progressUpdateIntervalMillis: 250 },
+          {
+            shouldPlay: true,
+            progressUpdateIntervalMillis: 250,
+            volume: voiceVolume / 100,
+          },
           (status: AVPlaybackStatus) => {
             if (!status.isLoaded) return;
             setIsLoaded(true);
@@ -423,6 +446,21 @@ export default function GeneratedMeditationPlayer({
                   );
                 })}
               </ScrollView>
+
+              <VolumeControl
+                label="Voice"
+                icon="volume-2"
+                value={voiceVolume}
+                onChange={setVoiceVolume}
+              />
+              {ambientId !== "none" ? (
+                <VolumeControl
+                  label="Ambient"
+                  icon="music"
+                  value={bedVolume}
+                  onChange={setBedVolume}
+                />
+              ) : null}
             </View>
 
             <ScrollView
