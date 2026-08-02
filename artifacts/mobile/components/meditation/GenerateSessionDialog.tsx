@@ -9,7 +9,6 @@ import {
   Modal,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -17,6 +16,7 @@ import {
 } from "react-native";
 
 import Colors from "@/constants/colors";
+import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import {
   api,
   ApiError,
@@ -164,7 +164,15 @@ export default function GenerateSessionDialog({
               </Text>
             </View>
           ) : (
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
+            // The focus field sits below the fold on a phone, so the
+            // keyboard covered the very words the user was typing about
+            // what the session should hold. Other screens already use the
+            // shared keyboard-aware scroller; this dialog never adopted it.
+            <KeyboardAwareScrollViewCompat
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 24 }}
+              bottomOffset={24}
+            >
               <View style={styles.header}>
                 <Text style={styles.title}>Generate a session</Text>
                 <Pressable onPress={onClose} hitSlop={8} style={({ pressed }) => [pressed && { opacity: 0.6 }]}>
@@ -265,7 +273,7 @@ export default function GenerateSessionDialog({
                   />
                 </View>
               )}
-            </ScrollView>
+            </KeyboardAwareScrollViewCompat>
           )}
         </View>
       </View>
