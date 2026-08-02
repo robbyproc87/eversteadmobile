@@ -8,6 +8,14 @@ const API_BASE = "https://my.everstead.app/api";
 // exempt: long generations are expected there and it has its own signal.
 const REQUEST_TIMEOUT_MS = 30_000;
 
+/**
+ * Ceiling for AI meditation generation specifically. A 20-minute session
+ * is many TTS chunks plus an encode, so minutes is normal here. Long
+ * enough to let a real generation finish; short enough that a genuinely
+ * dead request still ends.
+ */
+const GENERATE_TIMEOUT_MS = 300_000;
+
 export interface DashboardStats {
   weeklyScore?: number;
   journalStreak?: number;
@@ -250,20 +258,33 @@ function extractErrorMessage(body: unknown, fallback: string): string {
   return fallback;
 }
 
+/** Options that are ours rather than fetch's. */
+interface ApiFetchOptions extends RequestInit {
+  /**
+   * Override the 30s cap for endpoints that are legitimately slow.
+   * The default exists to stop hung connections hanging forever, but a
+   * request that is *expected* to take minutes needs its own ceiling —
+   * otherwise the client aborts work the server goes on to complete.
+   */
+  timeoutMs?: number;
+}
+
 export async function apiFetch<T>(
   path: string,
-  options?: RequestInit,
+  options?: ApiFetchOptions,
 ): Promise<T> {
   const { headers, preview } = await getAuthHeaders();
   if (preview) {
     throw new PreviewAuthError();
   }
 
+  const timeoutMs = options?.timeoutMs ?? REQUEST_TIMEOUT_MS;
+
   const doFetch = async (authHeaders: Record<string, string>) => {
     // Hung connections previously hung forever; abort after a hard
     // timeout while still honoring any caller-provided signal.
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     const external = options?.signal;
     if (external) {
       if (external.aborted) controller.abort();
@@ -763,6 +784,13 @@ export const api = {
     apiFetch<GeneratedMeditationDetail>("/meditation/generate", {
       method: "POST",
       body: JSON.stringify({ voice: "nova", ...input }),
+      // Generation is a Claude script call, then chunked TTS, then a
+      // server-side MP3 encode. That is minutes, and under the default
+      // 30s cap this request aborted every single time - the dialog
+      // asked its questions and could never succeed. The server carried
+      // on regardless, so the only thing the cap achieved was hiding
+      // finished meditations from the person who paid for them.
+      timeoutMs: GENERATE_TIMEOUT_MS,
     }),
 
   updateMeditationSession: (

@@ -129,6 +129,19 @@ export default function GenerateSessionDialog({
         setUpgradeOpen(true);
         return;
       }
+      // A timeout here does not mean the work stopped — the server keeps
+      // generating after we hang up. Telling the user it failed would be
+      // false, and would hide a session they are about to receive.
+      if (err instanceof ApiError && err.status === 0) {
+        queryClient.invalidateQueries({
+          queryKey: ["meditation", "generated"],
+        });
+        showError(
+          "Still generating — long sessions can take a few minutes. It will appear in My Meditations.",
+        );
+        onClose();
+        return;
+      }
       const msg = err instanceof ApiError ? err.message : "Couldn't generate. Please try again.";
       showError(msg);
     },
