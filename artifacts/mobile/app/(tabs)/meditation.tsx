@@ -96,6 +96,16 @@ export default function MeditationScreen() {
   const plan = usePlan();
   const [pendingDurationS, setPendingDurationS] = useState(0);
   const [preCheckinOpen, setPreCheckinOpen] = useState(false);
+  // The technique a session was started from, so a completed session is
+  // attributable to the practice rather than logged as a generic sit.
+  // Held in a ref for the same reason the check-in values are: completion
+  // fires from inside the tick, where a render closure would be stale.
+  const techniqueRef = useRef<string | null>(null);
+  // The timer lives at the top of the page and the technique library near
+  // the bottom. Starting from a technique used to leave the user staring
+  // at the list while a session ran off-screen, which reads as nothing
+  // having happened at all.
+  const scrollRef = useRef<ScrollView>(null);
   const [postReviewOpen, setPostReviewOpen] = useState(false);
   const [reviewSessionId, setReviewSessionId] = useState<string | null>(null);
   const [tensionBefore, setTensionBefore] = useState<number | null>(null);
@@ -284,6 +294,9 @@ export default function MeditationScreen() {
       const sb = checkinRef.current.stressBefore;
       createSession.mutate({
         durationS,
+        ...(techniqueRef.current
+          ? { meditationType: techniqueRef.current }
+          : {}),
         ...(tb != null ? { tensionBefore: tb } : {}),
         ...(sb != null ? { stressBefore: sb } : {}),
       });
@@ -320,6 +333,9 @@ export default function MeditationScreen() {
     setElapsed(0);
     setIsTimerActive(true);
     activateKeepAwakeAsync().catch(() => {});
+    // Bring the running timer into view. Without this a session started
+    // from the technique library begins silently below the fold.
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
     startAmbient();
     startTicking();
   }, [startAmbient, startTicking]);
@@ -328,6 +344,9 @@ export default function MeditationScreen() {
     if (Platform.OS !== "web") {
       Haptics.selectionAsync();
     }
+    // Quick Start is an unguided sit, not a technique. Clear any technique
+    // left over from a previous run so it can't mislabel this session.
+    techniqueRef.current = null;
     setPreCheckinOpen(true);
   }, []);
 
@@ -451,6 +470,7 @@ export default function MeditationScreen() {
       </View>
 
       <ScrollView
+        ref={scrollRef}
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -670,6 +690,7 @@ export default function MeditationScreen() {
                     }
                     if (Platform.OS !== "web") Haptics.selectionAsync();
                     setSelectedDuration(t.durationS);
+                    techniqueRef.current = t.type;
                     setPreCheckinOpen(true);
                   }}
                   style={({ pressed }) => [
